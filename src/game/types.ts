@@ -148,5 +148,6 @@ export interface GameState {
 
   log: LogEntry[];
   playerName: string;
+  avatar: string; // the player's chosen face
   stats: { weeksWorked: number; totalEarned: number };
 }

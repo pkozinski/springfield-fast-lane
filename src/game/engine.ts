@@ -23,7 +23,7 @@ function getLeisure(id: string) {
 }
 
 export type GameAction =
-  | { type: "START"; name: string }
+  | { type: "START"; name: string; avatar: string }
   | { type: "RESET" }
   | { type: "MOVE"; to: LocationId }
   | { type: "WORK"; hours: number }
@@ -71,6 +71,7 @@ export function initialState(): GameState {
     goals: { ...DEFAULT_GOALS },
     log: [],
     playerName: "You",
+    avatar: "🧑",
     stats: { weeksWorked: 0, totalEarned: 0 },
   };
 }
@@ -178,7 +179,8 @@ export function reducer(state: GameState, action: GameAction): GameState {
     const s = initialState();
     s.phase = "playing";
     s.playerName = action.name.trim() || "You";
-    log(s, `Week 1. ${s.playerName} arrives in the city with $${s.cash}. Time to make it.`, "info");
+    s.avatar = action.avatar || "🧑";
+    log(s, `Week 1. ${s.playerName} rolls into town with $${s.cash} and big dreams. Time to keep up with the Joneses.`, "info");
     return s;
   }
 

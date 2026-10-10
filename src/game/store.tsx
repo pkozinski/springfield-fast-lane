@@ -17,6 +17,7 @@ function load(): GameState {
       const parsed = JSON.parse(raw) as GameState;
       // guard against stale saves from older versions
       if (parsed && typeof parsed.week === "number" && parsed.goals) {
+        if (!parsed.avatar) parsed.avatar = "🧑"; // migrate pre-avatar saves
         seedLogSeq(parsed.log ?? []);
         return parsed;
       }

@@ -56,10 +56,26 @@ export const LOCATIONS: Location[] = [
   { id: "bank", name: "Vertex Bank", short: "Bank", category: "bank", icon: "🏦", x: 0, y: 2, accent: "#34d399", blurb: "Save with interest, or borrow to get ahead." },
 ];
 
-/** Non-interactive scenery that fills empty board cells (col,row). */
+/** Non-interactive building-sized scenery that fills an empty board cell (col,row). */
 export const DECORATIONS: { x: number; y: number; icon: string; name: string }[] = [
-  { x: 0, y: 1, icon: "🌳", name: "Park" },
+  { x: 0, y: 1, icon: "🌳", name: "City Park" },
 ];
+
+/** Freely-placed greenery scattered across the grounds (percentage positions). */
+export const SCENERY: { left: number; top: number; icon: string; size: number }[] = [
+  { left: 30, top: 30, icon: "🌳", size: 1.1 },
+  { left: 70, top: 30, icon: "🌲", size: 1 },
+  { left: 50, top: 24, icon: "🌳", size: 0.9 },
+  { left: 28, top: 70, icon: "🌲", size: 1 },
+  { left: 72, top: 70, icon: "🌳", size: 1.1 },
+  { left: 50, top: 76, icon: "🌲", size: 0.9 },
+  { left: 40, top: 50, icon: "🌸", size: 0.7 },
+  { left: 61, top: 50, icon: "🌷", size: 0.7 },
+  { left: 50, top: 50, icon: "⛲", size: 1.2 },
+];
+
+/** Face options for the player's character. */
+export const AVATARS = ["🧑", "👩", "🧔", "👱‍♀️", "👨‍🦱", "👩‍🦰", "🧓", "👨‍🦲", "👩‍🦳", "🧑‍🎤"];
 
 /** Board dimensions derived from the furthest location coordinates. */
 export const BOARD_COLS = Math.max(...LOCATIONS.map((l) => l.x)) + 1;

@@ -320,17 +320,22 @@ export default function LocationPanel({
   location: Location;
   onBack: () => void;
 }) {
+  const { state } = useGame();
   const { category } = location;
   return (
-    <div className="card stage">
+    <div className="card stage" style={{ ["--tile-accent" as string]: location.accent } as React.CSSProperties}>
       <button className="back-btn" onClick={onBack}>
         ✓ Done
       </button>
       <div className="loc-head">
         <span className="emoji">{location.icon}</span>
-        <div>
+        <div className="loc-head-text">
           <h2>{location.name}</h2>
           <p>{location.blurb}</p>
+        </div>
+        <div className="loc-portrait" title={state.playerName}>
+          <span className="portrait-face">{state.avatar}</span>
+          <span className="portrait-name">{state.playerName}</span>
         </div>
       </div>
 

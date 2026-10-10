@@ -6,7 +6,13 @@ export default function HUD() {
   const worth = netWorth(state);
   return (
     <header className="hud">
-      <div className="brand">🏁 Fast Lane</div>
+      <div className="player">
+        <span className="player-face">{state.avatar}</span>
+        <div className="player-meta">
+          <span className="player-name">{state.playerName}</span>
+          <span className="player-tag">🏁 Fast Lane</span>
+        </div>
+      </div>
 
       <div className="hud-stat">
         <span className="label">Week</span>
