@@ -324,7 +324,7 @@ export default function LocationPanel({
   return (
     <div className="card stage">
       <button className="back-btn" onClick={onBack}>
-        ← City map
+        ✓ Done
       </button>
       <div className="loc-head">
         <span className="emoji">{location.icon}</span>

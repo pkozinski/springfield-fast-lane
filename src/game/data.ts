@@ -31,23 +31,39 @@ export const DEFAULT_GOALS: Goals = {
 };
 
 // City map -----------------------------------------------------------------
+// Laid out clockwise around the board perimeter (5 columns x 4 rows).
+// The hollow centre is where the opened location panel appears.
 export const LOCATIONS: Location[] = [
+  // top row (left -> right)
   { id: "home", name: "Your Place", short: "Home", category: "home", icon: "🏠", x: 0, y: 0, accent: "#7c5cff", blurb: "Rest, check your life goals, and sleep to end the week." },
   { id: "employment", name: "Careers Hub", short: "Careers", category: "employment", icon: "💼", x: 1, y: 0, accent: "#38bdf8", blurb: "Browse and apply for jobs that match your skills." },
   { id: "university", name: "City University", short: "Uni", category: "university", icon: "🎓", x: 2, y: 0, accent: "#f59e0b", blurb: "Enroll in courses to earn credits and unlock better careers." },
-  { id: "bank", name: "Vertex Bank", short: "Bank", category: "bank", icon: "🏦", x: 3, y: 0, accent: "#34d399", blurb: "Save with interest, or borrow to get ahead." },
+  { id: "burger", name: "Monolith Burger", short: "Burger", category: "food", icon: "🍔", x: 3, y: 0, accent: "#fb923c", blurb: "Flip burgers for a paycheck — or just grab a quick meal." },
+  { id: "zmart", name: "Z-Mart", short: "Z-Mart", category: "shop", icon: "🛒", x: 4, y: 0, accent: "#60a5fa", blurb: "Everyday goods, a sharp wardrobe, and retail jobs." },
 
-  { id: "factory", name: "Apex Logistics", short: "Factory", category: "workplace", icon: "🏭", x: 0, y: 1, accent: "#f87171", blurb: "Hard, steady work. No degree required." },
-  { id: "burger", name: "Monolith Burger", short: "Burger", category: "food", icon: "🍔", x: 1, y: 1, accent: "#fb923c", blurb: "Flip burgers for a paycheck — or just grab a quick meal." },
-  { id: "cafe", name: "Socino's Café", short: "Café", category: "food", icon: "☕", x: 2, y: 1, accent: "#a78bfa", blurb: "Barista gigs and a decent espresso." },
-  { id: "hitech", name: "Hi-Tech Systems", short: "Hi-Tech", category: "shop", icon: "💻", x: 3, y: 1, accent: "#22d3ee", blurb: "Buy modern gear — and the best-paying careers in town." },
+  // right column (top -> bottom)
+  { id: "hitech", name: "Hi-Tech Systems", short: "Hi-Tech", category: "shop", icon: "💻", x: 4, y: 1, accent: "#22d3ee", blurb: "Buy modern gear — and the best-paying careers in town." },
+  { id: "cinema", name: "The Black Hole", short: "Cinema", category: "leisure", icon: "🎬", x: 4, y: 2, accent: "#c084fc", blurb: "Movies, streaming lounges, and good vibes." },
 
-  { id: "zmart", name: "Z-Mart", short: "Z-Mart", category: "shop", icon: "🛒", x: 0, y: 2, accent: "#60a5fa", blurb: "Everyday goods, a sharp wardrobe, and retail jobs." },
-  { id: "grocery", name: "Pay 'n Save", short: "Grocery", category: "food", icon: "🥦", x: 1, y: 2, accent: "#4ade80", blurb: "Cheap groceries to keep your energy topped up." },
-  { id: "gym", name: "Pulse Gym", short: "Gym", category: "leisure", icon: "💪", x: 2, y: 2, accent: "#f472b6", blurb: "Work out to recharge energy and lift your mood." },
-  { id: "cinema", name: "The Black Hole", short: "Cinema", category: "leisure", icon: "🎬", x: 3, y: 2, accent: "#c084fc", blurb: "Movies, streaming lounges, and good vibes." },
-  { id: "club", name: "Neon Club", short: "Club", category: "leisure", icon: "🪩", x: 2, y: 3, accent: "#e879f9", blurb: "A big night out for a big happiness boost." },
+  // bottom row (right -> left)
+  { id: "club", name: "Neon Club", short: "Club", category: "leisure", icon: "🪩", x: 4, y: 3, accent: "#e879f9", blurb: "A big night out for a big happiness boost." },
+  { id: "gym", name: "Pulse Gym", short: "Gym", category: "leisure", icon: "💪", x: 3, y: 3, accent: "#f472b6", blurb: "Work out to recharge energy and lift your mood." },
+  { id: "grocery", name: "Pay 'n Save", short: "Grocery", category: "food", icon: "🥦", x: 2, y: 3, accent: "#4ade80", blurb: "Cheap groceries to keep your energy topped up." },
+  { id: "cafe", name: "Socino's Café", short: "Café", category: "food", icon: "☕", x: 1, y: 3, accent: "#a78bfa", blurb: "Barista gigs and a decent espresso." },
+  { id: "factory", name: "Apex Logistics", short: "Factory", category: "workplace", icon: "🏭", x: 0, y: 3, accent: "#f87171", blurb: "Hard, steady work. No degree required." },
+
+  // left column
+  { id: "bank", name: "Vertex Bank", short: "Bank", category: "bank", icon: "🏦", x: 0, y: 2, accent: "#34d399", blurb: "Save with interest, or borrow to get ahead." },
 ];
+
+/** Non-interactive scenery that fills empty board cells (col,row). */
+export const DECORATIONS: { x: number; y: number; icon: string; name: string }[] = [
+  { x: 0, y: 1, icon: "🌳", name: "Park" },
+];
+
+/** Board dimensions derived from the furthest location coordinates. */
+export const BOARD_COLS = Math.max(...LOCATIONS.map((l) => l.x)) + 1;
+export const BOARD_ROWS = Math.max(...LOCATIONS.map((l) => l.y)) + 1;
 
 export function getLocation(id: string): Location {
   const loc = LOCATIONS.find((l) => l.id === id);

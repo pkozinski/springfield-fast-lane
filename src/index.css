@@ -237,115 +237,237 @@ button:disabled {
   color: var(--muted);
   font-size: 17px;
 }
-.map {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  padding: 12px;
-  background: repeating-linear-gradient(
-      45deg,
-      rgba(0, 0, 0, 0.05) 0 6px,
-      rgba(0, 0, 0, 0) 6px 12px
-    ),
-    #9a9a9a;
+/* ---- the board ---------------------------------------------------------- */
+.board-stage {
+  position: relative;
+}
+.board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--cols) / var(--rows);
+  background: linear-gradient(180deg, #6fae4e, #538a39);
   border: 3px solid;
   border-color: var(--sh-2) var(--hi) var(--hi) var(--sh-2);
+  overflow: hidden;
 }
-@media (max-width: 560px) {
-  .map {
-    grid-template-columns: repeat(2, 1fr);
-  }
+/* mottled grass texture */
+.board .grass {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 2px),
+    radial-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 2px);
+  background-size: 14px 14px, 22px 22px;
+  background-position: 0 0, 7px 11px;
+}
+/* loop road threading the perimeter buildings */
+.ring-road {
+  position: absolute;
+  left: calc(100% / var(--cols) / 2);
+  right: calc(100% / var(--cols) / 2);
+  top: calc(100% / var(--rows) / 2);
+  bottom: calc(100% / var(--rows) / 2);
+  box-sizing: border-box;
+  border: clamp(14px, 3.4vw, 30px) solid #cdb891;
+  border-radius: 46px;
+  box-shadow: 0 0 0 2px #8a7652, inset 0 0 0 2px #8a7652;
+}
+.ring-road::after {
+  content: "";
+  position: absolute;
+  inset: calc(clamp(14px, 3.4vw, 30px) / -2 - 1px);
+  border: 2px dashed rgba(255, 255, 255, 0.65);
+  border-radius: 46px;
 }
 
-/* each location = a little pixel storefront */
-.tile {
-  position: relative;
-  text-align: center;
-  padding: 26px 10px 14px;
-  min-height: 124px;
+/* scenery */
+.deco {
+  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+.deco-icon {
+  font-size: clamp(26px, 6vw, 46px);
+  filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.35));
+}
+.deco-name {
+  font-family: var(--pixel-font);
+  font-size: 7px;
+  color: #22401a;
+}
+
+/* a building sits in its grid cell, inset so roads/grass show around it */
+.building {
+  position: absolute;
+  z-index: 2;
+  padding: clamp(5px, 1.1vw, 12px);
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
   color: #fff;
+}
+.building .icon {
+  font-size: clamp(22px, 4.6vw, 40px);
+  line-height: 1;
+  width: 100%;
+  text-align: center;
+  padding: 6px 0 8px;
   background: var(--tile-accent, #567);
   border: 3px solid;
   border-color: var(--hi) var(--sh-2) var(--sh-2) var(--hi);
-  box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.35), inset 2px 2px 0 rgba(255, 255, 255, 0.3);
-  transition: transform 0.05s steps(1);
-  overflow: hidden;
+  box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.35), inset 2px 2px 0 rgba(255, 255, 255, 0.35);
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.3));
+  position: relative;
 }
-/* candy-stripe awning */
-.tile::before {
+/* candy-stripe awning across the storefront */
+.building .icon::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 16px;
-  background: repeating-linear-gradient(
-    90deg,
-    #fff 0 11px,
-    var(--tile-accent, #567) 11px 22px
-  );
-  border-bottom: 3px solid var(--sh-2);
+  height: 9px;
+  background: repeating-linear-gradient(90deg, #fff 0 8px, var(--tile-accent, #567) 8px 16px);
+  border-bottom: 2px solid var(--sh-2);
   filter: brightness(1.15);
 }
-/* doorway */
-.tile::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 24px;
-  height: 18px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 2px solid rgba(0, 0, 0, 0.6);
-  border-bottom: none;
+.building .tname {
+  font-family: var(--pixel-font);
+  font-size: 7px;
+  line-height: 1.4;
+  color: #141414;
+  background: #f5f0c8;
+  border: 2px solid var(--sh-2);
+  padding: 3px 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.tile:hover {
-  transform: translate(-1px, -1px);
-  filter: brightness(1.08);
+.building .tmeta {
+  font-family: var(--body-font);
+  font-size: 14px;
+  color: #10300a;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0 4px;
+  border-radius: 2px;
 }
-.tile:active {
+.building:hover .icon {
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.3)) brightness(1.1);
+}
+.building:active {
   transform: translate(1px, 1px);
 }
-.tile.here {
+.building.here .icon {
   box-shadow: 0 0 0 3px var(--lcd-amber), inset -2px -2px 0 rgba(0, 0, 0, 0.35),
-    inset 2px 2px 0 rgba(255, 255, 255, 0.3);
+    inset 2px 2px 0 rgba(255, 255, 255, 0.35);
 }
-.tile .icon {
-  font-size: 30px;
-  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.5));
-  margin-top: 2px;
+.building:disabled {
+  opacity: 1;
+  cursor: default;
 }
-.tile .tname {
-  font-family: var(--pixel-font);
-  font-size: 8px;
-  line-height: 1.5;
-  color: #111;
-  background: #f3f3c7;
-  border: 2px solid var(--sh-2);
-  padding: 4px 5px;
-  text-transform: uppercase;
-}
-.tile .tmeta {
-  font-size: 15px;
-  color: #fff;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
-  margin-top: auto;
-}
-.tile .badge {
+.building .badge {
   position: absolute;
-  top: 19px;
-  right: 6px;
-  z-index: 2;
+  top: 2px;
+  right: 2px;
+  z-index: 3;
+  font-family: var(--pixel-font);
   font-size: 6px;
-  padding: 3px 5px;
+  padding: 3px 4px;
   background: var(--lcd-amber);
   color: #000;
   border: 2px solid var(--sh-2);
+}
+
+/* the walking character */
+.token {
+  position: absolute;
+  z-index: 4;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -62%);
+  transition: left var(--walk, 0.7s) steps(10), top var(--walk, 0.7s) steps(10);
+  pointer-events: none;
+}
+.token-glyph {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: clamp(22px, 4.4vw, 38px);
+  line-height: 1;
+  filter: drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.5));
+}
+.token-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: clamp(16px, 3vw, 26px);
+  height: 7px;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  filter: blur(1px);
+}
+.token.walking .token-glyph {
+  animation: bob 0.18s steps(2) infinite;
+}
+@keyframes bob {
+  50% {
+    transform: translateX(-50%) translateY(-4px);
+  }
+}
+
+/* week / clock plate */
+.week-plate {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  color: #fff;
+  background: var(--accent);
+  padding: 6px 10px;
+  border: 3px solid;
+  border-color: var(--hi) var(--sh-2) var(--sh-2) var(--hi);
+  white-space: nowrap;
+}
+
+/* opened location, centered over the board like the original */
+.loc-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.loc-modal {
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4);
+}
+.loc-modal .stage {
+  min-height: 0;
+}
+@media (max-width: 560px) {
+  .week-plate {
+    font-size: 7px;
+  }
+  .building .tmeta {
+    display: none;
+  }
 }
 
 /* ---- location panel ----------------------------------------------------- */

@@ -11,32 +11,32 @@ import GameOver from "./screens/GameOver";
 
 export default function App() {
   const { state, dispatch } = useGame();
-  const [view, setView] = useState<"map" | "location">("map");
+  const [open, setOpen] = useState(false);
 
   if (state.phase === "intro") return <Intro />;
   if (state.phase === "won" || state.phase === "lost") return <GameOver />;
 
-  const openLocation = (id: LocationId) => {
-    void id;
-    setView("location");
-  };
+  const openLocation = (_id: LocationId) => setOpen(true);
 
   return (
     <div className="app">
       <HUD />
       <div className="grid">
-        <main>
-          {view === "map" ? (
-            <CityMap onEnter={openLocation} />
-          ) : (
-            <LocationPanel location={getLocation(state.location)} onBack={() => setView("map")} />
+        <main className="board-stage">
+          <CityMap onEnter={openLocation} />
+          {open && (
+            <div className="loc-overlay" onClick={() => setOpen(false)}>
+              <div className="loc-modal" onClick={(e) => e.stopPropagation()}>
+                <LocationPanel location={getLocation(state.location)} onBack={() => setOpen(false)} />
+              </div>
+            </div>
           )}
         </main>
         <Sidebar />
       </div>
 
       <div className="footer-note">
-        Fast Lane — a modern homage to Jones in the Fast Lane ·{" "}
+        Fast Lane — a retro homage to Jones in the Fast Lane ·{" "}
         <button
           onClick={() => {
             if (confirm("Abandon this life and start over?")) dispatch({ type: "RESET" });
