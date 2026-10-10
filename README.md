@@ -20,9 +20,16 @@ Hit all four before time runs out and you win.
 - **Money** comes from working your job; spend it on education and assets, or invest it at the bank (savings earn interest, loans cost interest).
 - **Sleep at home** to end the week — rent and interest are settled, then a fresh week begins.
 
-## Modernized vs. the original
+## Look & feel
 
-- Clean, responsive dark UI with a live goals dashboard and activity log.
+The UI is a deliberate homage to the 1990 VGA original: beveled gray Windows-3.1-style
+panels, pixel fonts (Press Start 2P + VT323), glowing LCD readouts, candy-stripe storefront
+"buildings" on the city map, and segmented equalizer-style stat bars — over a sky-and-grass
+backdrop. Fonts load from Google Fonts (with a monospace fallback offline).
+
+## Modernized under the hood
+
+- A live goals dashboard and activity log alongside the retro chrome.
 - A real net-worth economy (cash + savings + owned assets − debt).
 - An electric car that halves travel time; a laptop that speeds up studying.
 - Autosave to `localStorage` — close the tab and pick up where you left off.

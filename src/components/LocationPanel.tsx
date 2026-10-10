@@ -239,7 +239,7 @@ function Bank() {
         title={`Debt: $${state.debt.toLocaleString()}`}
         sub="Loans accrue 5% interest each week. Pay it down fast."
       />
-      <div className="card" style={{ background: "var(--panel-solid)" }}>
+      <div className="card">
         <div className="bank-input">
           <input
             type="number"
