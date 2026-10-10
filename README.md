@@ -22,10 +22,11 @@ Hit all four before time runs out and you win.
 
 ## Look & feel
 
-The UI is a deliberate homage to the 1990 VGA original: beveled gray Windows-3.1-style
-panels, pixel fonts (Press Start 2P + VT323), glowing LCD readouts, candy-stripe storefront
-"buildings" on the city map, and segmented equalizer-style stat bars — over a sky-and-grass
-backdrop. Fonts load from Google Fonts (with a monospace fallback offline).
+A clean, modern dark UI over the classic board layout: the city's locations ring the edges of
+the board around a hollow centre, connected by a loop path, and clicking one walks an animated
+character token there before the location opens as a centred panel — faithful to the original's
+flow, modern in style (soft surfaces, rounded cards, smooth motion, Inter type). Your token
+becomes a car once you buy one.
 
 ## Modernized under the hood
 
