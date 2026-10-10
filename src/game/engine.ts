@@ -44,6 +44,11 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 let logSeq = 0;
 
+/** Keep new log ids above anything in a restored save (avoids key collisions). */
+export function seedLogSeq(entries: LogEntry[]) {
+  logSeq = entries.reduce((m, e) => Math.max(m, e.id), logSeq);
+}
+
 export function initialState(): GameState {
   return {
     phase: "intro",

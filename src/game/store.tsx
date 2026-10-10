@@ -5,7 +5,7 @@ import {
   useReducer,
   type ReactNode,
 } from "react";
-import { initialState, reducer, type GameAction } from "./engine";
+import { initialState, reducer, seedLogSeq, type GameAction } from "./engine";
 import type { GameState } from "./types";
 
 const KEY = "fastlane.save.v1";
@@ -16,7 +16,10 @@ function load(): GameState {
     if (raw) {
       const parsed = JSON.parse(raw) as GameState;
       // guard against stale saves from older versions
-      if (parsed && typeof parsed.week === "number" && parsed.goals) return parsed;
+      if (parsed && typeof parsed.week === "number" && parsed.goals) {
+        seedLogSeq(parsed.log ?? []);
+        return parsed;
+      }
     }
   } catch {
     /* ignore corrupt saves */
