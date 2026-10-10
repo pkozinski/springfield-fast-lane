@@ -6,7 +6,7 @@
   "description": "A modern reimagining of the classic life-sim Jones in the Fast Lane.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
