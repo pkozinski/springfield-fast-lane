@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { LOCATIONS, RING, ringPath, getJob } from "../game/data";
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
@@ -28,6 +30,12 @@ function shade(hex: string, amt: number) {
   if (amt >= 0) c.lerp(new THREE.Color("#ffffff"), amt);
   else c.lerp(new THREE.Color("#000000"), -amt);
   return c;
+}
+
+/** Rounded (beveled) box — soft edges read far more premium than hard primitives. */
+function rb(w: number, h: number, d: number, radius = 0.09) {
+  const r = Math.min(radius, Math.min(w, h, d) / 2 - 0.001);
+  return new RoundedBoxGeometry(w, h, d, 4, Math.max(0.005, r));
 }
 
 function makeLabel(text: string) {
@@ -73,10 +81,10 @@ function addWindows(g: THREE.Group, w: number, h: number, d: number, mat: THREE.
     const wy = 0.42 + f * rowGap;
     if (wy > h - 0.2) break;
     for (const sx of cols) {
-      const wz = new THREE.Mesh(new THREE.BoxGeometry(ws, 0.28, 0.04), mat);
+      const wz = new THREE.Mesh(rb(ws, 0.28, 0.05, 0.02), mat);
       wz.position.set(sx * w, wy, d / 2 + 0.01);
       g.add(wz);
-      const wx = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.28, ws), mat);
+      const wx = new THREE.Mesh(rb(0.05, 0.28, ws, 0.02), mat);
       wx.position.set(w / 2 + 0.01, wy, sx * d);
       g.add(wx);
     }
@@ -88,21 +96,21 @@ function buildBuilding(loc: Location) {
   const g = new THREE.Group();
   g.userData.locId = loc.id;
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(loc.accent), roughness: 0.62, metalness: 0.05 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.22), roughness: 0.75 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.18), roughness: 0.6 });
-  const winMat = new THREE.MeshStandardMaterial({ color: "#bfe3ff", emissive: "#4a7ea8", emissiveIntensity: 0.5, roughness: 0.3 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: "#9fd0ef", emissive: "#2f6c94", emissiveIntensity: 0.6, roughness: 0.15, metalness: 0.4 });
-  const gold = new THREE.MeshStandardMaterial({ color: "#d9b24a", roughness: 0.35, metalness: 0.6 });
-  const metal = new THREE.MeshStandardMaterial({ color: "#8d949c", roughness: 0.5, metalness: 0.4 });
-  const doorMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.55), roughness: 0.6 });
+  const bodyMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(loc.accent), roughness: 0.5, metalness: 0.0, clearcoat: 0.5, clearcoatRoughness: 0.4, envMapIntensity: 1.0 });
+  const roofMat = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, -0.22), roughness: 0.6, clearcoat: 0.3, envMapIntensity: 0.9 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.18), roughness: 0.5, envMapIntensity: 1.0 });
+  const winMat = new THREE.MeshPhysicalMaterial({ color: "#cfeaff", emissive: "#4a7ea8", emissiveIntensity: 0.35, roughness: 0.08, metalness: 0, clearcoat: 1, envMapIntensity: 1.4 });
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: "#aed8f2", emissive: "#2f6c94", emissiveIntensity: 0.35, roughness: 0.05, metalness: 0.1, clearcoat: 1, envMapIntensity: 1.6 });
+  const gold = new THREE.MeshStandardMaterial({ color: "#e0b954", roughness: 0.25, metalness: 0.95, envMapIntensity: 1.3 });
+  const metal = new THREE.MeshStandardMaterial({ color: "#9aa1a9", roughness: 0.3, metalness: 0.85, envMapIntensity: 1.2 });
+  const doorMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.55), roughness: 0.5, envMapIntensity: 0.9 });
 
   let body: THREE.Mesh;
   let topY = 1.5;
   let halfW = 0.65;
 
-  const mkBox = (w: number, h: number, d: number, y: number, mat = bodyMat) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  const mkBox = (w: number, h: number, d: number, y: number, mat: THREE.Material = bodyMat) => {
+    const m = new THREE.Mesh(rb(w, h, d), mat);
     m.position.y = y;
     m.castShadow = true;
     m.receiveShadow = true;
@@ -116,7 +124,7 @@ function buildBuilding(loc: Location) {
     rim.receiveShadow = true;
   };
   const door = (d: number) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.05), doorMat);
+    const m = new THREE.Mesh(rb(0.34, 0.5, 0.06, 0.03), doorMat);
     m.position.set(0, 0.25, d / 2 + 0.02);
     g.add(m);
   };
@@ -392,9 +400,15 @@ function initScene(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  renderer.toneMappingExposure = 1.1;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   mount.appendChild(renderer.domElement);
+
+  // image-based lighting for soft, realistic reflections
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = envTex;
+  pmrem.dispose();
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.display = "block";
@@ -421,23 +435,26 @@ function initScene(
   sun.shadow.bias = -0.0004;
   scene.add(sun);
 
-  // island slab
+  // island slab (rounded, soft-edged diorama base)
   const islW = COLS * SP + 1.1;
   const islD = ROWS * SP + 1.1;
-  const grass = new THREE.MeshStandardMaterial({ color: "#6fb24e", roughness: 0.95 });
+  const grass = new THREE.MeshStandardMaterial({ color: "#6fb24e", roughness: 0.9, envMapIntensity: 0.5 });
   const dirt = new THREE.MeshStandardMaterial({ color: "#7a5c36", roughness: 1 });
-  const islandMats = [dirt, dirt, grass, dirt, dirt, dirt];
-  const island = new THREE.Mesh(new THREE.BoxGeometry(islW, 1.0, islD), islandMats);
-  island.position.y = -0.5;
-  island.receiveShadow = true;
-  scene.add(island);
+  const base = new THREE.Mesh(rb(islW, 0.9, islD, 0.18), dirt);
+  base.position.y = -0.47;
+  base.receiveShadow = true;
+  scene.add(base);
+  const grassTop = new THREE.Mesh(rb(islW - 0.08, 0.16, islD - 0.08, 0.14), grass);
+  grassTop.position.y = -0.04;
+  grassTop.receiveShadow = true;
+  scene.add(grassTop);
 
   // walkway tiles on ring cells
-  const roadMat = new THREE.MeshStandardMaterial({ color: "#d8c49a", roughness: 0.9 });
+  const roadMat = new THREE.MeshStandardMaterial({ color: "#d8c49a", roughness: 0.85, envMapIntensity: 0.4 });
   RING.forEach((c) => {
-    const tile = new THREE.Mesh(new THREE.BoxGeometry(SP * 0.96, 0.06, SP * 0.96), roadMat);
+    const tile = new THREE.Mesh(rb(SP * 0.94, 0.08, SP * 0.94, 0.06), roadMat);
     const p = cellToWorld(c.x, c.y);
-    tile.position.set(p.x, 0.03, p.z);
+    tile.position.set(p.x, 0.04, p.z);
     tile.receiveShadow = true;
     scene.add(tile);
   });
@@ -511,7 +528,7 @@ function initScene(
 
   // token: a glossy game pawn with a highlight ring
   const token = new THREE.Group();
-  const pawnMat = new THREE.MeshStandardMaterial({ color: "#e6c45c", roughness: 0.3, metalness: 0.7 });
+  const pawnMat = new THREE.MeshStandardMaterial({ color: "#e8c65e", roughness: 0.18, metalness: 0.95, envMapIntensity: 1.4 });
   const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.14, 20), pawnMat);
   foot.position.y = 0.07;
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.5, 16), pawnMat);
