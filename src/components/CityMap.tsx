@@ -297,18 +297,128 @@ function buildBuilding(loc: Location) {
       break;
     }
     case "gym": {
-      // wide hall with a barrel roof
-      const w = 1.35, h = 0.95, d = 1.15;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(w / 2, w / 2, d + 0.1, 20, 1, false, 0, Math.PI), roofMat);
-      barrel.rotation.z = Math.PI / 2;
-      barrel.rotation.y = Math.PI / 2;
-      barrel.position.y = h;
-      barrel.castShadow = true;
-      g.add(barrel);
-      topY = h + w / 2;
+      /* -------- full detail pass: a modern glass-fronted fitness centre -------- */
+      const w = 1.55, d = 1.22;
+      const baseH = 0.2; // concrete plinth
+      const mainH = 1.08; // main storey
+      const topOfWall = baseH + mainH; // 1.28
+
+      // extra materials (local to the gym)
+      const concrete = new THREE.MeshStandardMaterial({ color: "#c7c2b6", roughness: 0.92, envMapIntensity: 0.5 });
+      const wallMat = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, -0.04), roughness: 0.5, clearcoat: 0.4, envMapIntensity: 1.0 });
+      const mullion = new THREE.MeshStandardMaterial({ color: "#23272e", roughness: 0.4, metalness: 0.5, envMapIntensity: 1.0 });
+      const glassG = new THREE.MeshPhysicalMaterial({ color: "#b9e0f2", roughness: 0.04, metalness: 0, clearcoat: 1, transmission: 0.35, transparent: true, opacity: 0.86, envMapIntensity: 1.6 });
+      const interior = new THREE.MeshStandardMaterial({ color: "#ffd89a", emissive: "#ffb84d", emissiveIntensity: 0.55, roughness: 0.8 });
+      const trimMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.22), roughness: 0.4, metalness: 0.3, envMapIntensity: 1.1 });
+
+      // concrete plinth
+      const plinth = mkBox(w + 0.06, baseH, d + 0.06, baseH / 2, concrete);
+      plinth.receiveShadow = true;
+
+      // main solid shell (side/back walls); front will be mostly glazed
+      body = mkBox(w, mainH, d, baseH + mainH / 2, wallMat);
+
+      // warm interior volume (shows through the glazing)
+      mkBox(w - 0.3, mainH - 0.2, d - 0.3, baseH + mainH / 2, interior);
+
+      // ---- full-height glazed front (curtain wall) on +Z ----
+      const glassW = w - 0.18;
+      const glassH = mainH - 0.16;
+      const glassCY = baseH + 0.04 + glassH / 2;
+      const zf = d / 2 + 0.005;
+      // recessed dark frame
+      const gf = mkBox(glassW + 0.06, glassH + 0.06, 0.05, glassCY, mullion);
+      gf.position.z = zf - 0.02;
+      // the glass
+      const glass = mkBox(glassW, glassH, 0.04, glassCY, glassG);
+      glass.position.z = zf + 0.02;
+      glass.castShadow = false;
+      // mullions: verticals + horizontals
+      for (let i = 1; i < 5; i++) {
+        const mx = -glassW / 2 + (i * glassW) / 5;
+        const v = mkBox(0.035, glassH, 0.06, glassCY, mullion);
+        v.position.set(mx, glassCY, zf + 0.03);
+      }
+      for (let j = 1; j < 3; j++) {
+        const my = glassCY - glassH / 2 + (j * glassH) / 3;
+        const hbar = mkBox(glassW, 0.035, 0.06, my, mullion);
+        hbar.position.z = zf + 0.03;
+      }
+
+      // ---- entrance: recessed double glass doors + cantilevered canopy ----
+      const doorMat2 = new THREE.MeshPhysicalMaterial({ color: "#cfeefc", roughness: 0.05, metalness: 0.1, clearcoat: 1, transmission: 0.3, transparent: true, opacity: 0.9, envMapIntensity: 1.5 });
+      for (const dx of [-0.11, 0.11]) {
+        const dr = mkBox(0.2, 0.62, 0.04, baseH + 0.31, doorMat2);
+        dr.position.set(dx, baseH + 0.31, zf + 0.05);
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.18, 8), metal);
+        handle.position.set(dx + (dx < 0 ? 0.06 : -0.06), baseH + 0.31, zf + 0.09);
+        g.add(handle);
+      }
+      // canopy slab
+      const canopy = mkBox(0.74, 0.05, 0.42, baseH + 0.7, trimMat);
+      canopy.position.z = d / 2 + 0.18;
+      // canopy supports
+      for (const sx of [-0.32, 0.32]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 10), metal);
+        post.position.set(sx, baseH + 0.35, d / 2 + 0.36);
+        g.add(post);
+      }
+      // entrance steps
+      for (let s = 0; s < 3; s++) {
+        const step = mkBox(0.8 - s * 0.04, 0.05, 0.12, 0.025 + s * 0.05, concrete);
+        step.position.z = d / 2 + 0.3 - s * 0.1;
+      }
+
+      // ---- roofline trim + parapet ----
+      const trim = mkBox(w + 0.1, 0.07, d + 0.1, topOfWall + 0.02, trimMat);
+      void trim;
+      const parapet = mkBox(w + 0.04, 0.14, d + 0.04, topOfWall + 0.12, wallMat);
+      void parapet;
+
+      // ---- rooftop HVAC units, vent, railing ----
+      const hvacMat = new THREE.MeshStandardMaterial({ color: "#9fa6ad", roughness: 0.6, metalness: 0.4, envMapIntensity: 1.0 });
+      for (const [hx, hz] of [[-0.35, -0.2], [0.25, 0.1]] as [number, number][]) {
+        const unit = mkBox(0.34, 0.2, 0.3, topOfWall + 0.22, hvacMat);
+        unit.position.x = hx;
+        unit.position.z = hz;
+        // grille slats
+        for (let k = 0; k < 3; k++) {
+          const slat = mkBox(0.28, 0.015, 0.02, topOfWall + 0.16 + k * 0.05, mullion);
+          slat.position.set(hx, topOfWall + 0.16 + k * 0.05, hz + 0.15);
+        }
+      }
+      const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.22, 12), hvacMat);
+      vent.position.set(0.45, topOfWall + 0.23, -0.3);
+      g.add(vent);
+      // thin roof railing along the front edge
+      const rail = mkBox(w - 0.1, 0.02, 0.02, topOfWall + 0.34, metal);
+      rail.position.z = d / 2 - 0.05;
+      for (let i = 0; i <= 5; i++) {
+        const postx = -w / 2 + 0.08 + (i * (w - 0.16)) / 5;
+        const rp = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.22, 6), metal);
+        rp.position.set(postx, topOfWall + 0.23, d / 2 - 0.05);
+        g.add(rp);
+      }
+
+      // ---- sign pylon with a 3D dumbbell emblem ----
+      const pyPole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 12), metal);
+      pyPole.position.set(w / 2 + 0.02, 0.5, d / 2 - 0.1);
+      g.add(pyPole);
+      const panel = mkBox(0.42, 0.42, 0.07, 1.15, new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.1), emissive: shade(loc.accent, -0.1), emissiveIntensity: 0.4, roughness: 0.5 }));
+      panel.position.x = w / 2 + 0.02;
+      // dumbbell on the panel
+      const dbBar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.26, 10), metal);
+      dbBar.rotation.z = Math.PI / 2;
+      dbBar.position.set(w / 2 + 0.02, 1.15, 0.12);
+      g.add(dbBar);
+      for (const ex of [-0.13, 0.13]) {
+        const weight = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.08, 14), new THREE.MeshStandardMaterial({ color: "#2b2f36", roughness: 0.4, metalness: 0.5 }));
+        weight.rotation.z = Math.PI / 2;
+        weight.position.set(w / 2 + 0.02 + ex, 1.15, 0.12);
+        g.add(weight);
+      }
+
+      topY = topOfWall + 0.45;
       halfW = w / 2;
       break;
     }
