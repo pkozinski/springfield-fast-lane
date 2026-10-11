@@ -325,27 +325,31 @@ export default function LocationPanel({
   const { state } = useGame();
   const { category } = location;
   return (
-    <div className="card stage" style={{ ["--tile-accent" as string]: location.accent } as React.CSSProperties}>
-      <button className="back-btn" onClick={onBack}>
-        ✓ Done
-      </button>
-      <div className="loc-head">
-        <span className="emoji">
-          <Icon name={locationIcon(location)} size={30} strokeWidth={1.6} />
+    <div className="card stage deed" style={{ ["--tile-accent" as string]: location.accent } as React.CSSProperties}>
+      <div className="deed-band">
+        <span className="deed-emoji">
+          <Icon name={locationIcon(location)} size={26} strokeWidth={1.7} />
         </span>
-        <div className="loc-head-text">
+        <div className="deed-title">
+          <span className="deed-kicker">Title Deed</span>
           <h2>{location.name}</h2>
-          <p>{location.blurb}</p>
         </div>
+        <button className="deed-close" onClick={onBack} aria-label="Done">
+          ✕
+        </button>
+      </div>
+
+      <div className="deed-sub">
+        <p className="deed-blurb">{location.blurb}</p>
         <div className="loc-portrait" title={state.playerName}>
           <span className="portrait-face">
-            <Portrait id={state.avatar} size={50} />
+            <Portrait id={state.avatar} size={46} />
           </span>
           <span className="portrait-name">{state.playerName}</span>
         </div>
       </div>
 
-      <div style={{ marginTop: 16 }}>
+      <div className="deed-body">
         <WorkSection />
         {category === "employment" && <Employment />}
         {category === "university" && <University />}

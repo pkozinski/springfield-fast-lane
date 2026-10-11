@@ -16,12 +16,10 @@ const STEP = 0.2; // seconds per space hopped
 
 const cellToWorld = (gx: number, gy: number) =>
   new THREE.Vector3((gx - (COLS - 1) / 2) * SP, 0, (gy - (ROWS - 1) / 2) * SP);
-/** Token stands on the inner walkway, in front of its building (offset toward centre). */
+/** Token stands just in front of its building from the camera's view (offset toward camera, +z). */
 const tokenWorld = (gx: number, gy: number) => {
   const p = cellToWorld(gx, gy);
-  const dir = new THREE.Vector3(-p.x, 0, -p.z);
-  if (dir.lengthSq() > 1e-4) dir.normalize().multiplyScalar(0.92);
-  return new THREE.Vector3(p.x + dir.x, 0, p.z + dir.z);
+  return new THREE.Vector3(p.x, 0, p.z + 1.0);
 };
 const ringIndexOf = (id: LocationId) => RING.findIndex((c) => c.id === id);
 
@@ -65,161 +63,316 @@ function makeLabel(text: string) {
   return sprite;
 }
 
-function massing(loc: Location): { h: number; w: number } {
-  switch (loc.category) {
-    case "home":
-      return { h: 1.1, w: 1.15 };
-    case "food":
-      return { h: 1.3, w: 1.2 };
-    case "leisure":
-      return { h: 1.5, w: 1.25 };
-    case "bank":
-      return { h: 2.1, w: 1.3 };
-    case "university":
-      return { h: 1.9, w: 1.3 };
-    case "workplace":
-      return { h: 1.5, w: 1.4 };
-    default:
-      return { h: 1.75, w: 1.3 };
-  }
-}
-
-/** Build one building as a group of simple lit meshes. */
-function buildBuilding(loc: Location) {
-  const g = new THREE.Group();
-  g.userData.locId = loc.id;
-  const { h, w } = massing(loc);
-  const d = w;
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(loc.accent),
-    roughness: 0.65,
-    metalness: 0.05,
-  });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bodyMat);
-  body.position.y = h / 2;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  body.userData.locId = loc.id;
-  body.userData.baseColor = bodyMat.color.clone();
-  g.add(body);
-
-  // windows (emissive) on +Z and +X faces
-  const winMat = new THREE.MeshStandardMaterial({
-    color: "#bfe3ff",
-    emissive: "#4a7ea8",
-    emissiveIntensity: 0.5,
-    roughness: 0.3,
-  });
-  const floors = Math.max(1, Math.round(h / 0.55));
+/** Add a grid of emissive windows to the front (+Z) and right (+X) faces of a box. */
+function addWindows(g: THREE.Group, w: number, h: number, d: number, mat: THREE.Material, dense = false) {
+  const cols = dense ? [-0.3, 0, 0.3] : [-0.28, 0.28];
+  const rowGap = dense ? 0.42 : 0.55;
+  const floors = Math.max(1, Math.floor((h - 0.5) / rowGap) + 1);
+  const ws = dense ? 0.2 : 0.26;
   for (let f = 0; f < floors; f++) {
-    const wy = 0.4 + f * 0.55;
-    if (wy > h - 0.25) break;
-    for (const sx of [-0.28, 0.28]) {
-      const wz = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.04), winMat);
+    const wy = 0.42 + f * rowGap;
+    if (wy > h - 0.2) break;
+    for (const sx of cols) {
+      const wz = new THREE.Mesh(new THREE.BoxGeometry(ws, 0.28, 0.04), mat);
       wz.position.set(sx * w, wy, d / 2 + 0.01);
       g.add(wz);
-      const wx = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.26), winMat);
+      const wx = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.28, ws), mat);
       wx.position.set(w / 2 + 0.01, wy, sx * d);
       g.add(wx);
     }
   }
+}
 
-  // door
-  const doorMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.55), roughness: 0.6 });
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.05), doorMat);
-  door.position.set(0, 0.25, d / 2 + 0.01);
-  g.add(door);
+/** Build one building with a silhouette unique to its establishment. */
+function buildBuilding(loc: Location) {
+  const g = new THREE.Group();
+  g.userData.locId = loc.id;
 
-  // roof
-  const roofMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.2), roughness: 0.7 });
-  if (loc.category === "home") {
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.82, 0.7, 4), roofMat);
-    roof.rotation.y = Math.PI / 4;
-    roof.position.y = h + 0.33;
-    roof.castShadow = true;
-    g.add(roof);
-    const chim = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.16), roofMat);
-    chim.position.set(w * 0.25, h + 0.4, d * 0.2);
-    g.add(chim);
-  } else {
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.16, d + 0.12), roofMat);
-    roof.position.y = h + 0.08;
-    roof.castShadow = true;
-    g.add(roof);
-    // parapet rim
-    const rim = new THREE.Mesh(
-      new THREE.BoxGeometry(w + 0.16, 0.08, d + 0.16),
-      new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.18), roughness: 0.6 })
-    );
-    rim.position.y = h + 0.16;
-    g.add(rim);
-  }
-
-  // distinctive features
+  const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(loc.accent), roughness: 0.62, metalness: 0.05 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.22), roughness: 0.75 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.18), roughness: 0.6 });
+  const winMat = new THREE.MeshStandardMaterial({ color: "#bfe3ff", emissive: "#4a7ea8", emissiveIntensity: 0.5, roughness: 0.3 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: "#9fd0ef", emissive: "#2f6c94", emissiveIntensity: 0.6, roughness: 0.15, metalness: 0.4 });
   const gold = new THREE.MeshStandardMaterial({ color: "#d9b24a", roughness: 0.35, metalness: 0.6 });
   const metal = new THREE.MeshStandardMaterial({ color: "#8d949c", roughness: 0.5, metalness: 0.4 });
-  if (loc.id === "factory") {
-    for (const ox of [-0.3, 0.1]) {
-      const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.9, 12), metal);
-      stack.position.set(ox, h + 0.45, -0.2);
-      stack.castShadow = true;
-      g.add(stack);
+  const doorMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.55), roughness: 0.6 });
+
+  let body: THREE.Mesh;
+  let topY = 1.5;
+  let halfW = 0.65;
+
+  const mkBox = (w: number, h: number, d: number, y: number, mat = bodyMat) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.y = y;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+  const flatRoof = (w: number, h: number, d: number) => {
+    const r = mkBox(w + 0.12, 0.16, d + 0.12, h + 0.08, roofMat);
+    r.castShadow = true;
+    const rim = mkBox(w + 0.18, 0.08, d + 0.18, h + 0.17, rimMat);
+    rim.receiveShadow = true;
+  };
+  const door = (d: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.05), doorMat);
+    m.position.set(0, 0.25, d / 2 + 0.02);
+    g.add(m);
+  };
+
+  switch (loc.id) {
+    case "home": {
+      const w = 1.0, h = 0.85, d = 1.0;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.85, 0.7, 4), roofMat);
+      roof.rotation.y = Math.PI / 4;
+      roof.position.y = h + 0.35;
+      roof.castShadow = true;
+      g.add(roof);
+      mkBox(0.16, 0.42, 0.16, h + 0.42, roofMat).position.x = w * 0.28;
+      topY = h + 0.7;
+      halfW = w / 2;
+      break;
     }
-  } else if (loc.id === "bank") {
-    for (const ox of [-0.42, -0.14, 0.14, 0.42]) {
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, h * 0.8, 10), gold);
-      col.position.set(ox, (h * 0.8) / 2, d / 2 + 0.05);
-      g.add(col);
+    case "employment": {
+      // stepped office tower
+      const w = 1.1, h = 1.3, d = 1.0;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      mkBox(0.78, 0.7, 0.72, h + 0.35);
+      flatRoof(0.78, h + 0.7, 0.72);
+      topY = h + 0.9;
+      halfW = w / 2;
+      break;
     }
-    const ped = new THREE.Mesh(new THREE.ConeGeometry(w * 0.8, 0.4, 3), gold);
-    ped.rotation.y = Math.PI / 2;
-    ped.scale.z = 0.2;
-    ped.position.set(0, h + 0.2, d / 2 - 0.1);
-    g.add(ped);
-  } else if (loc.id === "university") {
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.5), bodyMat);
-    tower.position.y = h + 0.5;
-    tower.castShadow = true;
-    g.add(tower);
-    const top = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.5, 4), roofMat);
-    top.rotation.y = Math.PI / 4;
-    top.position.y = h + 1.25;
-    g.add(top);
-    const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 16), gold);
-    clock.rotation.x = Math.PI / 2;
-    clock.position.set(0, h + 0.6, 0.26);
-    g.add(clock);
-  } else if (loc.id === "hitech") {
-    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 8), metal);
-    ant.position.set(0.3, h + 0.5, 0);
-    g.add(ant);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), new THREE.MeshStandardMaterial({ color: "#ff5a6a", emissive: "#ff2a3a", emissiveIntensity: 0.8 }));
-    tip.position.set(0.3, h + 1.0, 0);
-    g.add(tip);
-  } else if (loc.id === "club") {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metal);
-    pole.position.y = h + 0.3;
-    g.add(pole);
-    const ball = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.22, 1),
-      new THREE.MeshStandardMaterial({ color: "#cdd6e2", roughness: 0.2, metalness: 0.9, flatShading: true })
-    );
-    ball.position.y = h + 0.7;
-    ball.userData.spin = true;
-    g.add(ball);
-  } else if (loc.id === "burger") {
-    const arch = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 10, 20, Math.PI), gold);
-    arch.position.set(0, h + 0.2, 0);
-    g.add(arch);
+    case "university": {
+      const w = 1.3, h = 1.05, d = 1.2;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      flatRoof(w, h, d);
+      const tower = mkBox(0.52, 0.95, 0.52, h + 0.55);
+      void tower;
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), gold);
+      dome.position.y = h + 1.03;
+      g.add(dome);
+      const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 16), gold);
+      clock.rotation.x = Math.PI / 2;
+      clock.position.set(0, h + 0.62, 0.28);
+      g.add(clock);
+      topY = h + 1.3;
+      halfW = w / 2;
+      break;
+    }
+    case "bank": {
+      // round rotunda + dome + columns
+      const r = 0.72, h = 1.3;
+      body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 28), bodyMat);
+      body.position.y = h / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r + 0.02, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), roofMat);
+      dome.position.y = h;
+      dome.castShadow = true;
+      g.add(dome);
+      const finial = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), gold);
+      finial.position.y = h + r + 0.05;
+      g.add(finial);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, h * 0.9, 10), gold);
+        col.position.set(Math.cos(a) * (r + 0.12), (h * 0.9) / 2, Math.sin(a) * (r + 0.12));
+        g.add(col);
+      }
+      topY = h + r + 0.2;
+      halfW = r + 0.1;
+      break;
+    }
+    case "factory": {
+      // long, low shed + sawtooth + stacks
+      const w = 1.55, h = 0.85, d = 1.1;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      for (let i = -1; i <= 1; i++) {
+        const tooth = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, d * 0.9, 3), roofMat);
+        tooth.rotation.set(Math.PI / 2, 0, Math.PI / 6);
+        tooth.position.set(i * 0.5, h + 0.14, 0);
+        g.add(tooth);
+      }
+      for (const ox of [-0.4, 0.0]) {
+        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.95, 12), metal);
+        stack.position.set(ox, h + 0.5, -0.3);
+        stack.castShadow = true;
+        g.add(stack);
+      }
+      topY = h + 1.0;
+      halfW = w / 2;
+      break;
+    }
+    case "zmart": {
+      // wide big-box + pylon sign
+      const w = 1.65, h = 1.0, d = 1.25;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      flatRoof(w, h, d);
+      const pole = mkBox(0.12, 1.0, 0.12, h + 0.3, metal);
+      void pole;
+      const sign = mkBox(0.5, 0.42, 0.08, h + 0.95, bodyMat);
+      (sign.material as THREE.MeshStandardMaterial) = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.25), emissive: shade(loc.accent, -0.1), emissiveIntensity: 0.4 });
+      topY = h + 1.2;
+      halfW = w / 2;
+      break;
+    }
+    case "hitech": {
+      // sleek glass tower
+      const w = 0.92, h = 2.1, d = 0.92;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, glassMat, true);
+      door(d);
+      mkBox(0.7, 0.22, 0.7, h + 0.11, rimMat);
+      const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 8), metal);
+      ant.position.y = h + 0.6;
+      g.add(ant);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshStandardMaterial({ color: "#ff5a6a", emissive: "#ff2a3a", emissiveIntensity: 0.9 }));
+      tip.position.y = h + 1.05;
+      g.add(tip);
+      topY = h + 1.1;
+      halfW = w / 2;
+      break;
+    }
+    case "cinema": {
+      // wide hall + marquee + vertical blade sign
+      const w = 1.35, h = 1.2, d = 1.05;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      const marquee = mkBox(w + 0.2, 0.26, 0.4, 0.95, rimMat);
+      void marquee;
+      const strip = mkBox(w + 0.14, 0.12, 0.42, 0.95, new THREE.MeshStandardMaterial({ color: "#ffd36a", emissive: "#ffb21e", emissiveIntensity: 0.8 }));
+      void strip;
+      door(d);
+      flatRoof(w, h, d);
+      const blade = mkBox(0.26, 1.0, 0.1, h + 0.4, new THREE.MeshStandardMaterial({ color: "#2a1540", emissive: "#ff5bd0", emissiveIntensity: 0.6 }));
+      blade.position.x = w / 2;
+      topY = h + 0.9;
+      halfW = w / 2;
+      break;
+    }
+    case "club": {
+      // hexagonal club + disco ball
+      const r = 0.72, h = 1.3;
+      body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 6), bodyMat);
+      body.position.y = h / 2;
+      body.rotation.y = Math.PI / 6;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.03, r + 0.03, 0.14, 6), new THREE.MeshStandardMaterial({ color: "#e879f9", emissive: "#d019d0", emissiveIntensity: 0.7 }));
+      band.rotation.y = Math.PI / 6;
+      band.position.y = h * 0.7;
+      g.add(band);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metal);
+      pole.position.y = h + 0.25;
+      g.add(pole);
+      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), new THREE.MeshStandardMaterial({ color: "#cdd6e2", roughness: 0.15, metalness: 0.95, flatShading: true }));
+      ball.position.y = h + 0.65;
+      ball.userData.spin = true;
+      g.add(ball);
+      topY = h + 0.9;
+      halfW = r;
+      break;
+    }
+    case "gym": {
+      // wide hall with a barrel roof
+      const w = 1.35, h = 0.95, d = 1.15;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(w / 2, w / 2, d + 0.1, 20, 1, false, 0, Math.PI), roofMat);
+      barrel.rotation.z = Math.PI / 2;
+      barrel.rotation.y = Math.PI / 2;
+      barrel.position.y = h;
+      barrel.castShadow = true;
+      g.add(barrel);
+      topY = h + w / 2;
+      halfW = w / 2;
+      break;
+    }
+    case "cafe": {
+      const w = 0.98, h = 1.0, d = 0.98;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      // slanted striped awning over the door
+      const awn = mkBox(w + 0.1, 0.06, 0.4, 0.78, new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.2) }));
+      awn.position.z = d / 2 + 0.16;
+      awn.rotation.x = -0.5;
+      flatRoof(w, h, d);
+      // umbrella beside
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), metal);
+      pole.position.set(w / 2 + 0.25, 0.25, d / 2 + 0.2);
+      g.add(pole);
+      const top = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.22, 10), new THREE.MeshStandardMaterial({ color: "#d9534f" }));
+      top.position.set(w / 2 + 0.25, 0.6, d / 2 + 0.2);
+      g.add(top);
+      topY = h + 0.2;
+      halfW = w / 2;
+      break;
+    }
+    case "grocery": {
+      const w = 1.2, h = 1.0, d = 1.05;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      flatRoof(w, h, d);
+      const canopy = mkBox(w + 0.2, 0.08, 0.42, 0.82, new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.22) }));
+      canopy.position.z = d / 2 + 0.16;
+      // produce crates
+      for (const ox of [-0.3, 0.1]) {
+        const crate = mkBox(0.22, 0.2, 0.22, 0.1, new THREE.MeshStandardMaterial({ color: "#9a6b3f" }));
+        crate.position.set(ox, 0.1, d / 2 + 0.28);
+      }
+      topY = h + 0.2;
+      halfW = w / 2;
+      break;
+    }
+    case "burger": {
+      const w = 1.15, h = 0.9, d = 1.15;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      flatRoof(w, h, d);
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 10, 20, Math.PI), gold);
+      arch.position.y = h + 0.34;
+      g.add(arch);
+      topY = h + 0.6;
+      halfW = w / 2;
+      break;
+    }
+    default: {
+      const w = 1.2, h = 1.4, d = 1.2;
+      body = mkBox(w, h, d, h / 2);
+      addWindows(g, w, h, d, winMat);
+      door(d);
+      flatRoof(w, h, d);
+      topY = h + 0.2;
+      halfW = w / 2;
+    }
   }
 
-  // label + optional job star
+  body.userData.locId = loc.id;
+
   const label = makeLabel(loc.short);
-  label.position.set(0, h + (loc.category === "home" ? 1.1 : 1.0), 0);
-  label.userData.labelBaseY = label.position.y;
+  label.position.set(0, topY + 0.5, 0);
   g.add(label);
 
-  return { group: g, body, label };
+  return { group: g, body, topY, halfW };
 }
 
 interface Api {
@@ -338,7 +491,7 @@ function initScene(
   const bodies: { id: LocationId; body: THREE.Mesh }[] = [];
   const jobMarkers: Record<string, THREE.Mesh> = {};
   LOCATIONS.forEach((loc) => {
-    const { group, body } = buildBuilding(loc);
+    const { group, body, topY, halfW } = buildBuilding(loc);
     const p = cellToWorld(loc.x, loc.y);
     group.position.set(p.x, 0, p.z);
     scene.add(group);
@@ -349,8 +502,9 @@ function initScene(
       new THREE.OctahedronGeometry(0.16),
       new THREE.MeshStandardMaterial({ color: "#ffcf4d", emissive: "#a9780a", emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.3 })
     );
-    star.position.set(p.x + massing(loc).w * 0.5, massing(loc).h + 0.5, p.z + massing(loc).w * 0.5);
+    star.position.set(p.x + halfW, topY + 0.35, p.z + halfW);
     star.visible = false;
+    star.userData.spin = true;
     scene.add(star);
     jobMarkers[loc.id] = star;
   });

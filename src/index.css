@@ -1267,6 +1267,86 @@ h4 {
   }
 }
 
+/* ---- location "title deed" card ----------------------------------------- */
+.loc-modal {
+  width: min(440px, 100%);
+}
+.deed {
+  padding: 0;
+  overflow: hidden;
+}
+.deed-band {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.42)),
+    var(--tile-accent, #555);
+  border-bottom: 3px solid rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.deed-emoji {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+}
+.deed-title {
+  flex: 1;
+  min-width: 0;
+}
+.deed-kicker {
+  font-family: var(--title);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.9;
+  display: block;
+}
+.deed-title h2 {
+  color: #fff;
+  font-size: 21px;
+  line-height: 1.15;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.deed-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+}
+.deed-close:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+.deed-sub {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px 16px 0;
+}
+.deed-blurb {
+  flex: 1;
+  margin: 0;
+  font-style: italic;
+  color: var(--muted);
+  font-size: 14px;
+}
+.deed-body {
+  padding: 13px 16px 16px;
+}
+
 /* ---- portraits fill their gilded frames --------------------------------- */
 .player-face,
 .portrait-face,
@@ -1312,9 +1392,8 @@ h4 {
 .clock-plate {
   position: absolute;
   z-index: 3;
-  left: 50%;
+  left: 14px;
   bottom: 12px;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
