@@ -158,21 +158,104 @@ function buildBuilding(loc: Location) {
       break;
     }
     case "university": {
-      const w = 1.3, h = 1.05, d = 1.2;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      flatRoof(w, h, d);
-      const tower = mkBox(0.52, 0.95, 0.52, h + 0.55);
-      void tower;
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), gold);
-      dome.position.y = h + 1.03;
+      /* -------- full detail pass: collegiate hall -------- */
+      const w = 1.5, d = 1.2, h = 1.05;
+      const baseH = 0.16;
+      const stone = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, 0.06), roughness: 0.6, clearcoat: 0.25, envMapIntensity: 0.9 });
+      const stoneLt = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.24), roughness: 0.55, envMapIntensity: 0.9 });
+      const archGlass = new THREE.MeshPhysicalMaterial({ color: "#cfe8f6", emissive: "#3f6f90", emissiveIntensity: 0.3, roughness: 0.08, clearcoat: 1, envMapIntensity: 1.4 });
+      const roofSlate = new THREE.MeshStandardMaterial({ color: "#5a5f6b", roughness: 0.7, metalness: 0.1, envMapIntensity: 0.8 });
+
+      // stylobate / steps
+      mkBox(w + 0.12, baseH, d + 0.12, baseH / 2, stoneLt).receiveShadow = true;
+
+      // main hall
+      body = mkBox(w, h, d, baseH + h / 2, stone);
+
+      // lower side wings
+      for (const sx of [-1, 1]) {
+        const wing = mkBox(0.5, h - 0.28, 0.9, baseH + (h - 0.28) / 2, stone);
+        wing.position.set(sx * (w / 2 - 0.02), baseH + (h - 0.28) / 2, -0.05);
+        const wingRoof = mkBox(0.56, 0.12, 0.96, baseH + h - 0.28 + 0.06, roofSlate);
+        wingRoof.position.set(sx * (w / 2 - 0.02), baseH + h - 0.28 + 0.06, -0.05);
+      }
+
+      // tall arched windows across the facade
+      for (const wx of [-0.42, 0, 0.42]) {
+        const pane = mkBox(0.2, 0.62, 0.05, baseH + 0.46, archGlass);
+        pane.position.set(wx, baseH + 0.46, d / 2 + 0.01);
+        const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.05, 14, 1, false, 0, Math.PI), archGlass);
+        arch.rotation.x = Math.PI / 2;
+        arch.rotation.z = 0;
+        arch.position.set(wx, baseH + 0.77, d / 2 + 0.01);
+        g.add(arch);
+        const trim = mkBox(0.26, 0.04, 0.06, baseH + 0.15, stoneLt);
+        trim.position.set(wx, baseH + 0.15, d / 2 + 0.02);
+      }
+
+      // entrance portico: columns + pediment + steps + doors
+      for (let s = 0; s < 3; s++) {
+        const step = mkBox(0.74 - s * 0.05, 0.05, 0.14 - s * 0.03, 0.025 + s * 0.05, stoneLt);
+        step.position.z = d / 2 + 0.26 - s * 0.08;
+      }
+      for (const cx2 of [-0.24, -0.08, 0.08, 0.24]) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.66, 14), stoneLt);
+        col.position.set(cx2, baseH + 0.33, d / 2 + 0.16);
+        col.castShadow = true;
+        g.add(col);
+        const cap = mkBox(0.14, 0.05, 0.14, baseH + 0.68, stoneLt);
+        cap.position.set(cx2, baseH + 0.68, d / 2 + 0.16);
+      }
+      // entablature + pediment over the portico
+      const entab = mkBox(0.74, 0.1, 0.18, baseH + 0.73, stoneLt);
+      entab.position.z = d / 2 + 0.16;
+      const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.18, 3), stoneLt);
+      ped.rotation.y = Math.PI / 2;
+      ped.scale.set(1, 0.42, 1);
+      ped.position.set(0, baseH + 0.86, d / 2 + 0.16);
+      g.add(ped);
+      // doors under the portico
+      for (const dx of [-0.1, 0.1]) {
+        const dr = mkBox(0.17, 0.46, 0.05, baseH + 0.23, new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.5), roughness: 0.5 }));
+        dr.position.set(dx, baseH + 0.23, d / 2 + 0.02);
+      }
+
+      // slate hip-ish roof + balustrade
+      const roofTop = baseH + h;
+      const roof = mkBox(w + 0.1, 0.14, d + 0.1, roofTop + 0.07, roofSlate);
+      roof.castShadow = true;
+      void roof;
+      for (let i = 0; i <= 7; i++) {
+        const bx = -w / 2 + 0.05 + (i * (w - 0.1)) / 7;
+        const baluster = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 6), stoneLt);
+        baluster.position.set(bx, roofTop + 0.2, d / 2 - 0.02);
+        g.add(baluster);
+      }
+
+      // central clock tower: shaft + clock faces + cupola dome + finial
+      const towerY = roofTop + 0.5;
+      mkBox(0.5, 1.0, 0.5, towerY, stone);
+      const belfry = mkBox(0.42, 0.26, 0.42, towerY + 0.62, stoneLt);
+      void belfry;
+      for (const [fx, fz, rotY] of [[0, 0.26, 0] as const, [0.26, 0, Math.PI / 2] as const]) {
+        const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 20), gold);
+        clock.rotation.x = Math.PI / 2;
+        clock.rotation.y = rotY;
+        clock.position.set(fx, towerY + 0.2, fz);
+        g.add(clock);
+      }
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.3, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2), gold);
+      dome.position.y = towerY + 0.75;
+      dome.castShadow = true;
       g.add(dome);
-      const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 16), gold);
-      clock.rotation.x = Math.PI / 2;
-      clock.position.set(0, h + 0.62, 0.28);
-      g.add(clock);
-      topY = h + 1.3;
+      const finial = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.2, 6), gold);
+      finial.position.y = towerY + 1.05;
+      g.add(finial);
+      const fball = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), gold);
+      fball.position.y = towerY + 1.17;
+      g.add(fball);
+
+      topY = towerY + 1.3;
       halfW = w / 2;
       break;
     }
@@ -202,24 +285,95 @@ function buildBuilding(loc: Location) {
       break;
     }
     case "factory": {
-      // long, low shed + sawtooth + stacks
-      const w = 1.55, h = 0.85, d = 1.1;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      for (let i = -1; i <= 1; i++) {
-        const tooth = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, d * 0.9, 3), roofMat);
-        tooth.rotation.set(Math.PI / 2, 0, Math.PI / 6);
-        tooth.position.set(i * 0.5, h + 0.14, 0);
-        g.add(tooth);
+      /* -------- full detail pass: industrial plant -------- */
+      const w = 1.62, d = 1.15, h = 0.92;
+      const baseH = 0.14;
+      const wallMat = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, -0.04), roughness: 0.62, clearcoat: 0.2, envMapIntensity: 0.85 });
+      const steel = new THREE.MeshStandardMaterial({ color: "#9aa1a9", roughness: 0.35, metalness: 0.85, envMapIntensity: 1.2 });
+      const dark = new THREE.MeshStandardMaterial({ color: "#3a3f45", roughness: 0.5, metalness: 0.5, envMapIntensity: 1.0 });
+      const concrete = new THREE.MeshStandardMaterial({ color: "#b9b4a8", roughness: 0.95 });
+      const smokeMat = new THREE.MeshStandardMaterial({ color: "#d9dde2", roughness: 1, transparent: true, opacity: 0.8 });
+
+      mkBox(w + 0.06, baseH, d + 0.06, baseH / 2, concrete).receiveShadow = true;
+      body = mkBox(w, h, d, baseH + h / 2, wallMat);
+
+      // corrugated banding on the walls
+      for (let b = 1; b <= 3; b++) {
+        const band = mkBox(w + 0.015, 0.015, d + 0.015, baseH + (b * h) / 4, dark);
+        band.castShadow = false;
+        void band;
       }
-      for (const ox of [-0.4, 0.0]) {
-        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.95, 12), metal);
-        stack.position.set(ox, h + 0.5, -0.3);
+
+      // roll-up loading door + frame on the front
+      const dockFrame = mkBox(0.58, 0.66, 0.05, baseH + 0.33, dark);
+      dockFrame.position.z = d / 2 + 0.01;
+      const dockDoor = mkBox(0.5, 0.58, 0.05, baseH + 0.29, steel);
+      dockDoor.position.z = d / 2 + 0.03;
+      for (let s = 0; s < 5; s++) {
+        const slat = mkBox(0.5, 0.012, 0.02, baseH + 0.1 + s * 0.11, dark);
+        slat.position.z = d / 2 + 0.06;
+      }
+      // personnel door + a couple of high windows
+      const pdoor = mkBox(0.22, 0.42, 0.05, baseH + 0.21, dark);
+      pdoor.position.set(0.55, baseH + 0.21, d / 2 + 0.02);
+      for (const wx of [-0.5, -0.2]) {
+        const win = mkBox(0.22, 0.2, 0.04, baseH + h - 0.22, winMat);
+        win.position.set(wx, baseH + h - 0.22, d / 2 + 0.02);
+      }
+
+      // north-light sawtooth roof: opaque slope + glazed vertical face
+      const roofY = baseH + h;
+      for (let i = -1; i <= 1; i++) {
+        const cx2 = i * 0.5;
+        const tooth = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, d * 0.92, 3), roofMat);
+        tooth.rotation.set(Math.PI / 2, 0, Math.PI / 6);
+        tooth.position.set(cx2, roofY + 0.12, 0);
+        tooth.castShadow = true;
+        g.add(tooth);
+        const pane = mkBox(0.34, 0.2, d * 0.9, roofY + 0.2, winMat);
+        pane.position.set(cx2 - 0.12, roofY + 0.2, 0);
+        pane.rotation.z = Math.PI / 6;
+      }
+
+      // two banded smokestacks with puffs
+      for (const ox of [-0.5, -0.18]) {
+        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.0, 14), steel);
+        stack.position.set(ox, roofY + 0.5, -0.32);
         stack.castShadow = true;
         g.add(stack);
+        for (const ry of [0.75, 0.95]) {
+          const band = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.02, 8, 16), dark);
+          band.rotation.x = Math.PI / 2;
+          band.position.set(ox, roofY + ry, -0.32);
+          g.add(band);
+        }
+        for (let p2 = 0; p2 < 3; p2++) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(0.1 + p2 * 0.04, 10, 10), smokeMat);
+          puff.position.set(ox + 0.05 + p2 * 0.06, roofY + 1.05 + p2 * 0.16, -0.32);
+          g.add(puff);
+        }
       }
-      topY = h + 1.0;
+
+      // storage tank beside the shed
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.7, 20), steel);
+      tank.position.set(w / 2 - 0.05, baseH + 0.35, -0.1);
+      tank.castShadow = true;
+      g.add(tank);
+      const tankTop = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), steel);
+      tankTop.position.set(w / 2 - 0.05, baseH + 0.7, -0.1);
+      g.add(tankTop);
+      // a pipe running from the tank to the shed
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 10), steel);
+      pipe.rotation.z = Math.PI / 2;
+      pipe.position.set(w / 2 - 0.25, baseH + 0.18, -0.1);
+      g.add(pipe);
+
+      // a roof exhaust fan
+      const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 14), dark);
+      fan.position.set(0.5, roofY + 0.18, 0.25);
+      g.add(fan);
+
+      topY = roofY + 1.3;
       halfW = w / 2;
       break;
     }
