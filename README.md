@@ -22,12 +22,18 @@ Hit all four before time runs out and you win.
 
 ## Look & feel
 
-An **isometric 2.5D diorama**, rendered as a single SVG scene: a floating island with tiled
-grounds and walkways, custom low-poly buildings (two sun-shaded wall faces, parapet roofs,
-windows, doors, rooftop units) each in its own colour, iso trees and a fountain, and a polished
-map-pin character. Clicking a building walks the character across the island, then the location
-opens as a centred panel. Clean modern chrome around it (frosted HUD + sidebar, Inter type).
-Pick your face on the intro; it rides the board and becomes a car once you buy one.
+A **Crusader Kings III-inspired** interface wrapped around an **isometric 2.5D realm map**:
+
+- **Chrome** — gilded leather panels with gold hairline frames and ⚜-marked header bars, Cinzel
+  serif titles over EB Garamond body, a dynasty-style **circular portrait** for your character
+  (pick your face on the intro, like choosing a ruler), gilded stat bars, and gold-embossed
+  buttons, over a warm gold-on-dark palette.
+- **The map** — a single SVG isometric diorama sat on a candle-lit tabletop: a tiled island with
+  walkways, custom low-poly buildings (sun-shaded faces, parapet roofs, windows, doors) with
+  distinctive features per business — factory smokestacks, bank columns, a university clock
+  tower, golden arches, a cinema marquee, a disco ball — plus trees, a fountain, and a map-pin
+  character that walks between tiles. Clicking a building walks there, then the location opens as
+  a centred, framed panel.
 
 ## Modernized under the hood
 

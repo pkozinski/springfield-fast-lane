@@ -49,14 +49,14 @@ export default function Sidebar() {
               <span className="gname">😊 Happiness</span>
               <span className="gval">{Math.round(state.happiness)}/100</span>
             </div>
-            <Bar pct={state.happiness} meterColor="linear-gradient(90deg,#f472b6,#fbbf24)" />
+            <Bar pct={state.happiness} meterColor="linear-gradient(180deg,#e7b86a,#c07a3a)" />
           </div>
           <div className="meter">
             <div className="goal-top">
               <span className="gname">⚡ Energy</span>
               <span className="gval">{Math.round(state.energy)}/100</span>
             </div>
-            <Bar pct={state.energy} meterColor="linear-gradient(90deg,#34d399,#22d3ee)" />
+            <Bar pct={state.energy} meterColor="linear-gradient(180deg,#a9cc7e,#6f9a4e)" />
           </div>
         </div>
         <p className="list-note" style={{ marginTop: 14, marginBottom: 0 }}>
