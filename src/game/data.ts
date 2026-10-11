@@ -6,6 +6,7 @@ import type {
   Job,
   LeisureActivity,
   Location,
+  LocationId,
   ShopItem,
 } from "./types";
 
@@ -80,6 +81,56 @@ export const AVATARS = ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7"];
 /** Board dimensions derived from the furthest location coordinates. */
 export const BOARD_COLS = Math.max(...LOCATIONS.map((l) => l.x)) + 1;
 export const BOARD_ROWS = Math.max(...LOCATIONS.map((l) => l.y)) + 1;
+
+/**
+ * The perimeter track, clockwise. The character hops from cell to cell along
+ * this loop (shortest direction), so movement reads directionally like a board.
+ * Includes the park cell as a walk-through waypoint (no `id`).
+ */
+export const RING: { x: number; y: number; id?: LocationId }[] = [
+  { x: 0, y: 0, id: "home" },
+  { x: 1, y: 0, id: "employment" },
+  { x: 2, y: 0, id: "university" },
+  { x: 3, y: 0, id: "burger" },
+  { x: 4, y: 0, id: "zmart" },
+  { x: 4, y: 1, id: "hitech" },
+  { x: 4, y: 2, id: "cinema" },
+  { x: 4, y: 3, id: "club" },
+  { x: 3, y: 3, id: "gym" },
+  { x: 2, y: 3, id: "grocery" },
+  { x: 1, y: 3, id: "cafe" },
+  { x: 0, y: 3, id: "factory" },
+  { x: 0, y: 2, id: "bank" },
+  { x: 0, y: 1 }, // park — pass-through
+];
+
+const ringIndex = (id: LocationId) => RING.findIndex((c) => c.id === id);
+
+/** Minimum number of steps around the loop between two locations. */
+export function ringDistance(fromId: LocationId, toId: LocationId): number {
+  const i = ringIndex(fromId);
+  const j = ringIndex(toId);
+  if (i < 0 || j < 0) return 0;
+  const d = Math.abs(i - j);
+  return Math.min(d, RING.length - d);
+}
+
+/** The sequence of cells to walk (shortest direction), excluding the start. */
+export function ringPath(fromId: LocationId, toId: LocationId): { x: number; y: number }[] {
+  const n = RING.length;
+  const i = ringIndex(fromId);
+  const j = ringIndex(toId);
+  if (i < 0 || j < 0 || i === j) return [];
+  const fwd = (j - i + n) % n;
+  const bwd = (i - j + n) % n;
+  const cells: { x: number; y: number }[] = [];
+  if (fwd <= bwd) {
+    for (let k = 1; k <= fwd; k++) cells.push(RING[(i + k) % n]);
+  } else {
+    for (let k = 1; k <= bwd; k++) cells.push(RING[(i - k + n) % n]);
+  }
+  return cells.map((c) => ({ x: c.x, y: c.y }));
+}
 
 export function getLocation(id: string): Location {
   const loc = LOCATIONS.find((l) => l.id === id);

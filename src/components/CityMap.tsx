@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LOCATIONS, getJob } from "../game/data";
+import { LOCATIONS, getJob, ringPath } from "../game/data";
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
 import type { Location, LocationId } from "../game/types";
@@ -11,7 +11,6 @@ import Clock from "./Clock";
    Isometric diorama renderer.
    Everything is one SVG in scene coordinates so painter-ordering is automatic.
 ---------------------------------------------------------------------------- */
-const WALK_MS = 750;
 
 // tile + scene geometry (scene units == SVG user units)
 // A higher B:A ratio tilts the camera toward a top-down "board" view.
@@ -75,10 +74,12 @@ function IsoBuilding({
   loc,
   here,
   onClick,
+  onHover,
 }: {
   loc: Location;
   here: boolean;
   onClick: () => void;
+  onHover?: (enter: boolean) => void;
 }) {
   const { x: cx, y: cy } = iso(loc.x, loc.y);
   const { h, roof, fw } = massing(loc);
@@ -218,7 +219,14 @@ function IsoBuilding({
   feature(loc, { cx, cy, roofY, af, bf, h, F, Fp, quad, p, key, colors: { lit, dark, roofC, roofTop, trim } });
 
   return (
-    <g className={"iso-bld" + (here ? " here" : "")} onClick={onClick} role="button" aria-label={loc.name}>
+    <g
+      className={"iso-bld" + (here ? " here" : "")}
+      onClick={onClick}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+      role="button"
+      aria-label={loc.name}
+    >
       <polygon points={diamond(cx, cy + 6, af + 16, bf + 8)} fill="rgba(0,0,0,0.22)" />
       {here && (
         <polygon points={diamond(cx, cy + 2, af + 12, bf + 6)} fill="none" stroke="#ffd34d" strokeWidth={3} className="here-ring" />
@@ -386,19 +394,23 @@ function Fountain({ gx, gy }: { gx: number; gy: number }) {
   );
 }
 
+const STEP_MS = 190; // time per board space hopped
+
 export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void }) {
   const { state, dispatch } = useGame();
   const [walking, setWalking] = useState(false);
-  const timer = useRef<number | null>(null);
+  const [arrived, setArrived] = useState(false);
+  const [walkCell, setWalkCell] = useState<{ x: number; y: number } | null>(null);
+  const [hovered, setHovered] = useState<LocationId | null>(null);
+  const timers = useRef<number[]>([]);
   const job = state.jobId ? getJob(state.jobId) : null;
   const hasCar = state.ownedItems.includes("car");
 
-  useEffect(
-    () => () => {
-      if (timer.current) window.clearTimeout(timer.current);
-    },
-    []
-  );
+  const clearTimers = () => {
+    timers.current.forEach((t) => window.clearTimeout(t));
+    timers.current = [];
+  };
+  useEffect(() => () => clearTimers(), []);
 
   function go(id: LocationId) {
     if (walking) return;
@@ -406,17 +418,33 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
       onEnter(id);
       return;
     }
-    const cost = travelCost(state, id);
-    if (cost > state.hours) {
-      dispatch({ type: "MOVE", to: id });
+    if (travelCost(state, id) > state.hours) {
+      dispatch({ type: "MOVE", to: id }); // engine logs "not enough hours"
       return;
     }
-    dispatch({ type: "MOVE", to: id });
-    setWalking(true);
-    timer.current = window.setTimeout(() => {
-      setWalking(false);
+    const path = ringPath(state.location, id);
+    if (path.length === 0) {
+      dispatch({ type: "MOVE", to: id });
       onEnter(id);
-    }, WALK_MS);
+      return;
+    }
+    setHovered(null);
+    setWalking(true);
+    // hop through each space in turn
+    path.forEach((cell, i) => {
+      timers.current.push(window.setTimeout(() => setWalkCell(cell), i * STEP_MS));
+    });
+    // arrive
+    timers.current.push(
+      window.setTimeout(() => {
+        setWalking(false);
+        setArrived(true);
+        setWalkCell(null);
+        dispatch({ type: "MOVE", to: id });
+        timers.current.push(window.setTimeout(() => setArrived(false), 320));
+        timers.current.push(window.setTimeout(() => onEnter(id), 180));
+      }, path.length * STEP_MS)
+    );
   }
 
   // ground tiles: path under buildings, grass elsewhere
@@ -467,12 +495,24 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
       key: loc.id,
       sum: loc.x + loc.y,
       gx: loc.x,
-      el: <IsoBuilding loc={loc} here={loc.id === state.location} onClick={() => go(loc.id)} />,
+      el: (
+        <IsoBuilding
+          loc={loc}
+          here={loc.id === state.location}
+          onClick={() => go(loc.id)}
+          onHover={(enter) => !walking && setHovered(enter ? loc.id : null)}
+        />
+      ),
     })
   );
   props.sort((a, b) => a.sum - b.sum || a.gx - b.gx);
 
-  const tokenPos = iso(getLoc(state.location).x, getLoc(state.location).y);
+  const cur = walkCell ?? getLoc(state.location);
+  const tokenPos = iso(cur.x, cur.y);
+
+  // route preview: tiles the character would hop to a hovered destination
+  const routeCells =
+    !walking && hovered && hovered !== state.location ? ringPath(state.location, hovered) : [];
 
   return (
     <div className="card stage board-card">
@@ -528,6 +568,32 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
             <g key={p.key}>{p.el}</g>
           ))}
 
+          {/* route preview: glowing footsteps toward the hovered destination */}
+          {routeCells.length > 0 && (
+            <g style={{ pointerEvents: "none" }}>
+              {routeCells.map((cell, i) => {
+                const pos = iso(cell.x, cell.y);
+                const c = iso(2, 1.5);
+                const dx = c.x - pos.x;
+                const dy = c.y - pos.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const mx = pos.x + (dx / len) * 26;
+                const my = pos.y + (dy / len) * 26;
+                const last = i === routeCells.length - 1;
+                return (
+                  <g key={"rt" + i} transform={`translate(${mx} ${my})`} className="route-dot">
+                    <polygon
+                      points={diamond(0, 0, last ? 13 : 7, last ? 7 : 3.5)}
+                      fill={last ? "rgba(236,211,140,0.85)" : "rgba(236,211,140,0.55)"}
+                      stroke={last ? "#ecd38c" : "none"}
+                      strokeWidth={last ? 1.5 : 0}
+                    />
+                  </g>
+                );
+              })}
+            </g>
+          )}
+
           {/* name signs: a top layer so buildings never cover them */}
           <g style={{ pointerEvents: "none" }}>
             {[...LOCATIONS]
@@ -539,8 +605,11 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
 
           {/* character token: a dynasty-pin with the player's portrait */}
           <g
-            className={"iso-token" + (walking ? " walking" : "")}
-            style={{ transform: `translate(${tokenPos.x}px, ${tokenPos.y}px)` }}
+            className={"iso-token" + (walking ? " walking" : "") + (arrived ? " arrived" : "")}
+            style={{
+              transform: `translate(${tokenPos.x}px, ${tokenPos.y}px)`,
+              transition: walking ? `transform ${STEP_MS}ms linear` : "transform 0.28s ease",
+            }}
           >
             <ellipse cx={0} cy={2} rx={13} ry={5} fill="rgba(0,0,0,0.3)" />
             <g className="iso-token-bob">

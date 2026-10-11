@@ -311,11 +311,33 @@ h4 {
   font-size: 15px;
 }
 .iso-token.walking .iso-token-bob {
-  animation: tokbob 0.4s ease-in-out infinite;
+  animation: tokbob 0.38s ease-in-out infinite;
 }
 @keyframes tokbob {
   50% {
-    transform: translateY(-6px);
+    transform: translateY(-7px);
+  }
+}
+.iso-token.arrived .iso-token-bob {
+  animation: tokarrive 0.32s ease-out;
+}
+@keyframes tokarrive {
+  0% {
+    transform: translateY(-9px) scale(0.9, 1.12);
+  }
+  55% {
+    transform: translateY(1px) scale(1.12, 0.86);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+.route-dot {
+  animation: routepulse 0.9s ease-in-out infinite;
+}
+@keyframes routepulse {
+  50% {
+    opacity: 0.45;
   }
 }
 .iso-tree {

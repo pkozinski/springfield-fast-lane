@@ -7,7 +7,7 @@ import {
   getHome,
   getItem,
   getJob,
-  getLocation,
+  ringDistance,
 } from "./data";
 import type { GameState, Goals, LocationId, LogEntry } from "./types";
 
@@ -101,10 +101,8 @@ export function goalsMet(s: GameState): boolean {
 
 export function travelCost(s: GameState, to: LocationId): number {
   if (to === s.location) return 0;
-  const a = getLocation(s.location);
-  const b = getLocation(to);
-  const dist = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-  let hours = dist * CONFIG.travelHoursPerTile;
+  const steps = ringDistance(s.location, to); // spaces moved around the board
+  let hours = steps * CONFIG.travelHoursPerTile;
   if (s.ownedItems.includes("car")) hours *= CONFIG.carTravelDiscount;
   return Math.max(0.5, round1(hours));
 }
