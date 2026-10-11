@@ -3,6 +3,9 @@ import { LOCATIONS, getJob } from "../game/data";
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
 import type { Location, LocationId } from "../game/types";
+import { Portrait } from "./Portrait";
+import { Icon } from "./Icon";
+import Clock from "./Clock";
 
 /* ----------------------------------------------------------------------------
    Isometric diorama renderer.
@@ -388,7 +391,7 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
   const [walking, setWalking] = useState(false);
   const timer = useRef<number | null>(null);
   const job = state.jobId ? getJob(state.jobId) : null;
-  const token = state.ownedItems.includes("car") ? "🚗" : state.avatar;
+  const hasCar = state.ownedItems.includes("car");
 
   useEffect(
     () => () => {
@@ -534,26 +537,34 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
               ))}
           </g>
 
-          {/* character token */}
+          {/* character token: a dynasty-pin with the player's portrait */}
           <g
             className={"iso-token" + (walking ? " walking" : "")}
             style={{ transform: `translate(${tokenPos.x}px, ${tokenPos.y}px)` }}
           >
-            <ellipse cx={0} cy={2} rx={13} ry={5} fill="rgba(0,0,0,0.28)" />
+            <ellipse cx={0} cy={2} rx={13} ry={5} fill="rgba(0,0,0,0.3)" />
             <g className="iso-token-bob">
-              <path d="M 0,-44 C 13,-44 17,-29 0,-14 C -17,-29 -13,-44 0,-44 Z" fill="#7c5cff" stroke="#fff" strokeWidth="2.5" />
-              <circle cx={0} cy={-34} r={11} fill="#fff" />
-              <text x={0} y={-29} textAnchor="middle" className="iso-token-face">
-                {token}
-              </text>
+              <path d="M 0,-44 C 13,-44 17,-29 0,-14 C -17,-29 -13,-44 0,-44 Z" fill="#c9a24b" stroke="#2a1f08" strokeWidth="1.5" />
+              <circle cx={0} cy={-34} r={10.5} fill="#15110b" />
+              {hasCar ? (
+                <g transform="translate(-9 -43)" color="#ecd38c">
+                  <Icon name="car" size={18} />
+                </g>
+              ) : (
+                <g transform="translate(-9.5 -43.5)">
+                  <Portrait id={state.avatar} size={19} />
+                </g>
+              )}
             </g>
           </g>
         </svg>
 
-        <div className="week-plate">
-          <span className="wp-week">Week {state.week}</span>
-          <span className="wp-sep">·</span>
-          <span className="wp-hours">{state.hours}h left</span>
+        <div className="clock-plate">
+          <Clock hours={state.hours} total={state.hoursPerWeek} size={58} />
+          <div className="clock-meta">
+            <span className="wp-week">Week {state.week}</span>
+            <span className="wp-hours">{state.hours}h of {state.hoursPerWeek}h left</span>
+          </div>
         </div>
       </div>
     </div>

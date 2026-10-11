@@ -34,6 +34,11 @@ A **Crusader Kings III-inspired** interface wrapped around an **isometric 2.5D r
   tower, golden arches, a cinema marquee, a disco ball — plus trees, a fountain, and a map-pin
   character that walks between tiles. Clicking a building walks there, then the location opens as
   a centred, framed panel.
+- **No emoji** — the character is an engraved **cameo portrait** (pick one on the intro like
+  choosing a ruler) and every stat/location/item uses a custom gold **SVG icon** set.
+- **The clock** — an analog week-clock (in the HUD and on the board, à la the original) whose hand
+  sweeps a full turn as the week's hours are spent. Run out of time and you're walked home and
+  the week rolls over automatically; an **End Week** button is always available too.
 
 ## Modernized under the hood
 

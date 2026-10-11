@@ -71,7 +71,7 @@ export function initialState(): GameState {
     goals: { ...DEFAULT_GOALS },
     log: [],
     playerName: "You",
-    avatar: "🧑",
+    avatar: "p0",
     stats: { weeksWorked: 0, totalEarned: 0 },
   };
 }
@@ -385,13 +385,21 @@ export function reducer(state: GameState, action: GameAction): GameState {
 
     case "SLEEP": {
       if (s.location !== "home") {
-        log(s, "You can only sleep at home. Head back first.", "bad");
-        break;
+        log(s, "You head home to turn in for the night.", "info");
+        s.location = "home";
       }
       s.energy = clamp(s.energy + 18);
       endWeek(s);
       break;
     }
+  }
+
+  // Out of time: the clock runs out, you're sent home, and the week rolls over.
+  if (s.phase === "playing" && action.type !== "SLEEP" && s.hours <= 0) {
+    s.location = "home";
+    log(s, "The week's hours ran out — you head home to rest.", "info");
+    s.energy = clamp(s.energy + 18);
+    endWeek(s);
   }
 
   return s;

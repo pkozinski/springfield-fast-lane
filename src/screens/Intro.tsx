@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGame } from "../game/store";
 import { AVATARS, CONFIG, DEFAULT_GOALS } from "../game/data";
+import { Portrait } from "../components/Portrait";
 
 export default function Intro() {
   const { dispatch } = useGame();
@@ -19,7 +20,9 @@ export default function Intro() {
         </p>
 
         <div className="avatar-pick">
-          <div className="avatar-preview">{avatar}</div>
+          <div className="avatar-preview">
+            <Portrait id={avatar} size={84} />
+          </div>
           <div className="avatar-row">
             {AVATARS.map((a) => (
               <button
@@ -27,9 +30,9 @@ export default function Intro() {
                 type="button"
                 className={"avatar-opt" + (a === avatar ? " sel" : "")}
                 onClick={() => setAvatar(a)}
-                aria-label={"Choose avatar " + a}
+                aria-label={"Choose portrait " + a}
               >
-                {a}
+                <Portrait id={a} size={44} />
               </button>
             ))}
           </div>

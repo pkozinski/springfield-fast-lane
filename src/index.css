@@ -1230,3 +1230,76 @@ h4 {
     display: none;
   }
 }
+
+/* ---- portraits fill their gilded frames --------------------------------- */
+.player-face,
+.portrait-face,
+.avatar-preview,
+.avatar-opt {
+  padding: 0;
+  overflow: hidden;
+  background: none;
+}
+.player-face svg,
+.portrait-face svg,
+.avatar-preview svg,
+.avatar-opt svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+}
+
+/* ---- icons --------------------------------------------------------------- */
+.loc-head .emoji {
+  color: #fff8e6;
+}
+.action-row .ai {
+  color: var(--accent-2);
+}
+.goal-top .gname svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ---- HUD clock + end-week ----------------------------------------------- */
+.hud-clock {
+  display: flex;
+  align-items: center;
+}
+.hud .end-week {
+  font-size: 10px;
+  padding: 8px 13px;
+}
+
+/* ---- board clock plate (à la the original) ------------------------------ */
+.clock-plate {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 15px 6px 7px;
+  background: linear-gradient(180deg, #2a2114, #17110a);
+  border: 1px solid var(--gold-dk);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--border), 0 6px 16px rgba(0, 0, 0, 0.55);
+}
+.clock-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.clock-plate .wp-week {
+  font-family: var(--title);
+  font-weight: 700;
+  color: var(--accent-2);
+  font-size: 14px;
+}
+.clock-plate .wp-hours {
+  font-size: 12.5px;
+  color: var(--muted);
+}

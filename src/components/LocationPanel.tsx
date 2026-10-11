@@ -11,6 +11,8 @@ import {
   leisureAt,
 } from "../game/data";
 import type { Location } from "../game/types";
+import { Icon, itemIcon, leisureIcon, locationIcon } from "./Icon";
+import { Portrait } from "./Portrait";
 
 /* ---- generic building blocks ---- */
 function Row({
@@ -20,7 +22,7 @@ function Row({
   tags,
   children,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   title: React.ReactNode;
   sub?: React.ReactNode;
   tags?: React.ReactNode;
@@ -50,7 +52,7 @@ function WorkSection() {
   const h = Math.min(hours, max);
   return (
     <Row
-      icon="🧰"
+      icon={<Icon name="briefcase" />}
       title={`Work your shift — ${job.title}`}
       sub={`$${job.wage}/hr · earns $${h * job.wage} for ${h}h · uses energy`}
       tags={<span className="tag ok">Your job</span>}
@@ -95,7 +97,7 @@ function Employment() {
           return (
             <Row
               key={job.id}
-              icon="💼"
+              icon={<Icon name="briefcase" />}
               title={job.title}
               sub={`$${job.wage}/hr · Tier ${job.tier} · ${job.blurb}`}
               tags={
@@ -134,7 +136,7 @@ function University() {
         return (
           <Row
             key={c.id}
-            icon="📚"
+            icon={<Icon name="book" />}
             title={c.name}
             sub={`+${c.credits} credits · ${hours}h · ${c.blurb}`}
           >
@@ -162,7 +164,7 @@ function Shop({ location }: { location: Location }) {
         return (
           <Row
             key={it.id}
-            icon={it.icon}
+            icon={<Icon name={itemIcon(it.category)} />}
             title={it.name}
             sub={`+${it.happy} happiness${it.id === "car" ? " · halves travel" : ""} · ${it.blurb}`}
             tags={owned ? <span className="tag owned">Owned</span> : undefined}
@@ -190,7 +192,7 @@ function FoodAndLeisure({ location }: { location: Location }) {
       {foods.map((f) => (
         <Row
           key={f.id}
-          icon={f.icon}
+          icon={<Icon name="food" />}
           title={f.name}
           sub={`+${f.energy} energy · +${f.happy} happiness · ${f.hours}h`}
         >
@@ -206,7 +208,7 @@ function FoodAndLeisure({ location }: { location: Location }) {
       {acts.map((a) => (
         <Row
           key={a.id}
-          icon={a.icon}
+          icon={<Icon name={leisureIcon(a.id)} />}
           title={a.name}
           sub={`+${a.happy} happiness · ${a.energy >= 0 ? "+" : ""}${a.energy} energy · ${a.hours}h`}
         >
@@ -233,9 +235,9 @@ function Bank() {
   };
   return (
     <div className="action-list">
-      <Row icon="💵" title={`Savings: $${state.savings.toLocaleString()}`} sub="Earns 1.5% interest each week." />
+      <Row icon={<Icon name="coin" />} title={`Savings: $${state.savings.toLocaleString()}`} sub="Earns 1.5% interest each week." />
       <Row
-        icon="📉"
+        icon={<Icon name="bills" />}
         title={`Debt: $${state.debt.toLocaleString()}`}
         sub="Loans accrue 5% interest each week. Pay it down fast."
       />
@@ -278,7 +280,7 @@ function Home() {
   return (
     <div className="action-list">
       <Row
-        icon="🛌"
+        icon={<Icon name="moon" />}
         title="Sleep & end the week"
         sub="Recover energy, collect pay, then rent and interest are settled."
       >
@@ -294,7 +296,7 @@ function Home() {
         return (
           <Row
             key={h.id}
-            icon={h.icon}
+            icon={<Icon name="home" />}
             title={h.name}
             sub={`Rent $${h.rent}/wk · +${h.happyPerWeek} happiness/wk · ${h.blurb}`}
             tags={isCurrent ? <span className="tag owned">Living here</span> : undefined}
@@ -328,13 +330,17 @@ export default function LocationPanel({
         ✓ Done
       </button>
       <div className="loc-head">
-        <span className="emoji">{location.icon}</span>
+        <span className="emoji">
+          <Icon name={locationIcon(location)} size={30} strokeWidth={1.6} />
+        </span>
         <div className="loc-head-text">
           <h2>{location.name}</h2>
           <p>{location.blurb}</p>
         </div>
         <div className="loc-portrait" title={state.playerName}>
-          <span className="portrait-face">{state.avatar}</span>
+          <span className="portrait-face">
+            <Portrait id={state.avatar} size={50} />
+          </span>
           <span className="portrait-name">{state.playerName}</span>
         </div>
       </div>

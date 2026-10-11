@@ -74,8 +74,8 @@ export const SCENERY: { left: number; top: number; icon: string; size: number }[
   { left: 50, top: 50, icon: "⛲", size: 1.2 },
 ];
 
-/** Face options for the player's character. */
-export const AVATARS = ["🧑", "👩", "🧔", "👱‍♀️", "👨‍🦱", "👩‍🦰", "🧓", "👨‍🦲", "👩‍🦳", "🧑‍🎤"];
+/** Character portrait options (see Portrait.tsx for the rendered cameos). */
+export const AVATARS = ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7"];
 
 /** Board dimensions derived from the furthest location coordinates. */
 export const BOARD_COLS = Math.max(...LOCATIONS.map((l) => l.x)) + 1;

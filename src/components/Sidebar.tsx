@@ -1,6 +1,7 @@
 import { useGame } from "../game/store";
 import { goalProgress, netWorth } from "../game/engine";
 import { getJob } from "../game/data";
+import { Icon, type IconName } from "./Icon";
 
 function Bar({ pct, meterColor }: { pct: number; meterColor?: string }) {
   const full = pct >= 100;
@@ -17,11 +18,11 @@ export default function Sidebar() {
   const worth = netWorth(state);
   const job = state.jobId ? getJob(state.jobId) : null;
 
-  const goals: { key: keyof typeof gp; name: string; now: string; target: string }[] = [
-    { key: "wealth", name: "💰 Wealth", now: `$${worth.toLocaleString()}`, target: `$${state.goals.wealth.toLocaleString()}` },
-    { key: "career", name: "📈 Career", now: `Lvl ${state.careerLevel}`, target: `Lvl ${state.goals.career}` },
-    { key: "education", name: "🎓 Education", now: `${state.credits} cr`, target: `${state.goals.education} cr` },
-    { key: "happiness", name: "😊 Happiness", now: `${Math.round(state.happiness)}`, target: `${state.goals.happiness}` },
+  const goals: { key: keyof typeof gp; icon: IconName; name: string; now: string; target: string }[] = [
+    { key: "wealth", icon: "wealth", name: "Wealth", now: `$${worth.toLocaleString()}`, target: `$${state.goals.wealth.toLocaleString()}` },
+    { key: "career", icon: "career", name: "Career", now: `Lvl ${state.careerLevel}`, target: `Lvl ${state.goals.career}` },
+    { key: "education", icon: "book", name: "Education", now: `${state.credits} cr`, target: `${state.goals.education} cr` },
+    { key: "happiness", icon: "sun", name: "Happiness", now: `${Math.round(state.happiness)}`, target: `${state.goals.happiness}` },
   ];
 
   return (
@@ -31,7 +32,9 @@ export default function Sidebar() {
         {goals.map((g) => (
           <div className="goal" key={g.key}>
             <div className="goal-top">
-              <span className="gname">{g.name}</span>
+              <span className="gname">
+                <Icon name={g.icon} size={16} /> {g.name}
+              </span>
               <span className="gval">
                 {g.now} <span style={{ color: "var(--faint)" }}>/ {g.target}</span>
               </span>
@@ -46,14 +49,18 @@ export default function Sidebar() {
         <div className="meters">
           <div className="meter">
             <div className="goal-top">
-              <span className="gname">😊 Happiness</span>
+              <span className="gname">
+                <Icon name="sun" size={16} /> Happiness
+              </span>
               <span className="gval">{Math.round(state.happiness)}/100</span>
             </div>
             <Bar pct={state.happiness} meterColor="linear-gradient(180deg,#e7b86a,#c07a3a)" />
           </div>
           <div className="meter">
             <div className="goal-top">
-              <span className="gname">⚡ Energy</span>
+              <span className="gname">
+                <Icon name="bolt" size={16} /> Energy
+              </span>
               <span className="gval">{Math.round(state.energy)}/100</span>
             </div>
             <Bar pct={state.energy} meterColor="linear-gradient(180deg,#a9cc7e,#6f9a4e)" />
