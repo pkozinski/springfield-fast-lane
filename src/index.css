@@ -289,6 +289,36 @@ h4 {
 .iso-tree {
   pointer-events: none;
 }
+.smoke {
+  animation: smoke 3s ease-in-out infinite;
+}
+@keyframes smoke {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+.blink {
+  animation: blink 1.4s steps(1, end) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+.spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 4.5s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* drifting clouds over the top band */
 .board .sky {
   position: absolute;

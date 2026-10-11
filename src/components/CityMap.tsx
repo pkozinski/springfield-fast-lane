@@ -11,15 +11,16 @@ import type { Location, LocationId } from "../game/types";
 const WALK_MS = 750;
 
 // tile + scene geometry (scene units == SVG user units)
-const A = 80; // tile half-width
-const B = 40; // tile half-height
+// A higher B:A ratio tilts the camera toward a top-down "board" view.
+const A = 76; // tile half-width
+const B = 54; // tile half-height
 const OX = 340;
-const OY = 140;
-const SCENE_W = 800;
-const SCENE_H = 560;
-const DEPTH = 36; // island thickness
-const AF = 60; // building footprint half-width
-const BF = 30; // building footprint half-height
+const OY = 120;
+const SCENE_W = 780;
+const SCENE_H = 640;
+const DEPTH = 26; // island thickness
+const AF = 50; // building footprint half-width
+const BF = 36; // building footprint half-height
 
 const iso = (gx: number, gy: number) => ({ x: OX + (gx - gy) * A, y: OY + (gx + gy) * B });
 const diamond = (cx: number, cy: number, a: number, b: number) =>
@@ -40,51 +41,31 @@ function shade(hex: string, amt: number) {
 }
 
 // per-category building massing
-function massing(loc: Location): { h: number; ac: boolean } {
+interface Mass {
+  h: number;
+  roof: "flat" | "hip";
+  fw: number;
+}
+function massing(loc: Location): Mass {
   switch (loc.category) {
     case "home":
-      return { h: 64, ac: false };
+      return { h: 42, roof: "hip", fw: 0.86 };
     case "food":
-      return { h: 78, ac: false };
+      return { h: 52, roof: "flat", fw: 0.96 };
     case "leisure":
-      return { h: 88, ac: true };
+      return { h: 56, roof: "flat", fw: 1.0 };
     case "employment":
-      return { h: 98, ac: true };
+      return { h: 64, roof: "flat", fw: 1.0 };
     case "university":
-      return { h: 108, ac: true };
+      return { h: 68, roof: "flat", fw: 1.03 };
     case "bank":
-      return { h: 116, ac: true };
+      return { h: 72, roof: "flat", fw: 1.03 };
     case "workplace":
-      return { h: 100, ac: true };
+      return { h: 58, roof: "flat", fw: 1.12 };
     case "shop":
     default:
-      return { h: 104, ac: true };
+      return { h: 62, roof: "flat", fw: 1.06 };
   }
-}
-
-// map a (s,t) coordinate on a wall face to a scene point
-const faceR = (cx: number, cy: number, h: number, s: number, t: number) =>
-  `${cx + s * AF},${cy + BF - s * BF - t * h}`;
-const faceL = (cx: number, cy: number, h: number, s: number, t: number) =>
-  `${cx - s * AF},${cy + BF - s * BF - t * h}`;
-
-function windowPoly(
-  cx: number,
-  cy: number,
-  h: number,
-  side: "r" | "l",
-  sc: number,
-  tc: number,
-  sw: number,
-  th: number
-) {
-  const f = side === "r" ? faceR : faceL;
-  return [
-    f(cx, cy, h, sc - sw, tc - th),
-    f(cx, cy, h, sc + sw, tc - th),
-    f(cx, cy, h, sc + sw, tc + th),
-    f(cx, cy, h, sc - sw, tc + th),
-  ].join(" ");
 }
 
 function IsoBuilding({
@@ -97,87 +78,256 @@ function IsoBuilding({
   onClick: () => void;
 }) {
   const { x: cx, y: cy } = iso(loc.x, loc.y);
-  const { h, ac } = massing(loc);
+  const { h, roof, fw } = massing(loc);
+  const af = AF * fw;
+  const bf = BF * fw;
   const roofY = cy - h;
 
-  const lit = shade(loc.accent, 0.08); // right face (sun)
-  const dark = shade(loc.accent, -0.32); // left face (shade)
-  const roof = shade(loc.accent, -0.12);
-  const roofTop = shade(loc.accent, 0.14);
+  const lit = shade(loc.accent, 0.08);
+  const dark = shade(loc.accent, -0.34);
+  const roofC = shade(loc.accent, -0.12);
+  const roofTop = shade(loc.accent, 0.16);
+  const frame = shade(loc.accent, -0.46);
+  const trim = shade(loc.accent, 0.22);
+  const baseC = shade(loc.accent, -0.44);
 
-  const rows = h >= 96 ? [0.42, 0.74] : [0.56];
-  const winR: string[] = [];
-  const winL: string[] = [];
-  for (const t of rows) {
-    for (const s of [0.34, 0.72]) {
-      winR.push(windowPoly(cx, cy, h, "r", s, t, 0.11, 0.1));
-      winL.push(windowPoly(cx, cy, h, "l", s, t, 0.11, 0.1));
+  // (s,t) -> scene point on a wall face. s runs along the base edge, t is up.
+  const R = (s: number, t: number) => `${cx + s * af},${cy + bf - s * bf - t * h}`;
+  const L = (s: number, t: number) => `${cx - s * af},${cy + bf - s * bf - t * h}`;
+  const F = (side: "R" | "L", s: number, t: number) => (side === "R" ? R(s, t) : L(s, t));
+  const Fp = (side: "R" | "L", s: number, t: number) => ({
+    x: cx + (side === "R" ? s * af : -s * af),
+    y: cy + bf - s * bf - t * h,
+  });
+  const quad = (side: "R" | "L", s0: number, s1: number, t0: number, t1: number) =>
+    `${F(side, s0, t0)} ${F(side, s1, t0)} ${F(side, s1, t1)} ${F(side, s0, t1)}`;
+
+  const p: JSX.Element[] = [];
+  const key = (s: string) => `${loc.id}-${s}`;
+
+  const win = (side: "R" | "L", sc: number, tc: number, hw: number, th: number, k: string) => {
+    const glass = side === "R" ? "#d9eeff" : "#a9c9e2";
+    p.push(
+      <polygon key={key(k + "f")} points={quad(side, sc - hw, sc + hw, tc - th, tc + th)} fill={frame} />,
+      <polygon
+        key={key(k + "g")}
+        points={quad(side, sc - hw * 0.76, sc + hw * 0.76, tc - th * 0.76, tc + th * 0.76)}
+        fill={glass}
+      />,
+      <polygon
+        key={key(k + "h")}
+        points={`${F(side, sc - hw * 0.76, tc + th * 0.05)} ${F(side, sc - hw * 0.05, tc + th * 0.76)} ${F(
+          side,
+          sc - hw * 0.76,
+          tc + th * 0.76
+        )}`}
+        fill="rgba(255,255,255,0.45)"
+      />
+    );
+  };
+
+  // ---- walls + global shading ----
+  const wallL = `${cx},${cy + bf} ${cx - af},${cy} ${cx - af},${cy - h} ${cx},${cy + bf - h}`;
+  const wallR = `${cx},${cy + bf} ${cx + af},${cy} ${cx + af},${cy - h} ${cx},${cy + bf - h}`;
+  p.push(<polygon key={key("wl")} points={wallL} fill={dark} />);
+  p.push(<polygon key={key("wr")} points={wallR} fill={lit} />);
+
+  // ---- floors ----
+  const groundT = Math.min(0.42, 40 / h);
+  const upper = Math.max(1, Math.round((h - 40) / 28));
+  const upT = (1 - groundT) / upper;
+
+  // base plinth
+  p.push(<polygon key={key("plL")} points={quad("L", 0, 1, 0, 0.05)} fill={shade(loc.accent, -0.54)} />);
+  p.push(<polygon key={key("plR")} points={quad("R", 0, 1, 0, 0.05)} fill={baseC} />);
+
+  // upper-floor windows + string courses
+  for (let i = 0; i < upper; i++) {
+    const tc = Math.min(0.84, groundT + (i + 0.5) * upT);
+    const th = Math.min(upT * 0.3, 0.09);
+    [0.28, 0.72].forEach((sc, j) => {
+      win("R", sc, tc, 0.1, th, `ur${i}${j}`);
+      win("L", sc, tc, 0.1, th, `ul${i}${j}`);
+    });
+    if (i > 0) {
+      const tb = groundT + i * upT;
+      p.push(<polygon key={key("scR" + i)} points={quad("R", 0.05, 0.95, tb - 0.01, tb + 0.01)} fill={trim} />);
+      p.push(<polygon key={key("scL" + i)} points={quad("L", 0.05, 0.95, tb - 0.01, tb + 0.01)} fill={shade(loc.accent, -0.2)} />);
     }
   }
-  const door = `${faceR(cx, cy, h, 0.42, 0)} ${faceR(cx, cy, h, 0.6, 0)} ${faceR(
-    cx,
-    cy,
-    h,
-    0.6,
-    0.34
-  )} ${faceR(cx, cy, h, 0.42, 0.34)}`;
 
-  const wallL = `${cx},${cy + BF} ${cx - AF},${cy} ${cx - AF},${cy - h} ${cx},${cy + BF - h}`;
-  const wallR = `${cx},${cy + BF} ${cx + AF},${cy} ${cx + AF},${cy - h} ${cx},${cy + BF - h}`;
+  // ---- ground-floor storefront (front/right face) ----
+  p.push(<polygon key={key("sfF")} points={quad("R", 0.12, 0.88, 0.05, groundT - 0.05)} fill={frame} />);
+  p.push(<polygon key={key("sfG")} points={quad("R", 0.14, 0.86, 0.07, groundT - 0.07)} fill="#bfe0f5" />);
+  // glass pane dividers
+  [0.32, 0.5, 0.68].forEach((s, i) =>
+    p.push(<polygon key={key("sfd" + i)} points={quad("R", s - 0.006, s + 0.006, 0.07, groundT - 0.07)} fill={frame} />)
+  );
+  // door
+  p.push(<polygon key={key("door")} points={quad("R", 0.45, 0.6, 0, groundT - 0.09)} fill={shade(loc.accent, -0.5)} />);
+  p.push(<polygon key={key("knob")} points={quad("R", 0.575, 0.59, groundT * 0.4, groundT * 0.46)} fill="#ffe08a" />);
+  // side-face ground windows
+  win("L", 0.3, groundT * 0.52, 0.11, groundT * 0.3, "sgl0");
+  win("L", 0.7, groundT * 0.52, 0.11, groundT * 0.3, "sgl1");
+
+  // ---- awning with stripes over the storefront ----
+  const awn = shade(loc.accent, -0.05);
+  for (let k = 0; k < 8; k++) {
+    const s0 = 0.1 + k * 0.1;
+    p.push(
+      <polygon
+        key={key("aw" + k)}
+        points={quad("R", s0, s0 + 0.1, groundT - 0.02, groundT + 0.05)}
+        fill={k % 2 ? "#ffffff" : awn}
+      />
+    );
+  }
+  p.push(<polygon key={key("awlip")} points={quad("R", 0.1, 0.9, groundT + 0.045, groundT + 0.06)} fill={shade(loc.accent, -0.25)} />);
+
+  // ---- cornice ----
+  p.push(<polygon key={key("coR")} points={quad("R", 0, 1, 0.9, 0.965)} fill={trim} />);
+  p.push(<polygon key={key("coL")} points={quad("L", 0, 1, 0.9, 0.965)} fill={shade(loc.accent, -0.18)} />);
+
+  // gloss over faces + corner highlight
+  p.push(<polygon key={key("glL")} points={wallL} fill="url(#glossL)" />);
+  p.push(<polygon key={key("glR")} points={wallR} fill="url(#glossR)" />);
+  p.push(<line key={key("corner")} x1={cx} y1={cy + bf} x2={cx} y2={cy + bf - h} stroke="rgba(255,255,255,0.22)" strokeWidth={2} />);
+
+  // ---- roof ----
+  if (roof === "hip") {
+    const apex = `${cx},${roofY - 30}`;
+    const Tp = `${cx},${roofY - bf}`;
+    const Rp = `${cx + af},${roofY}`;
+    const Btp = `${cx},${roofY + bf}`;
+    const Lp = `${cx - af},${roofY}`;
+    p.push(<polygon key={key("rk1")} points={`${Tp} ${Lp} ${apex}`} fill={shade(loc.accent, -0.3)} />);
+    p.push(<polygon key={key("rk2")} points={`${Tp} ${Rp} ${apex}`} fill={roofC} />);
+    p.push(<polygon key={key("rk3")} points={`${Lp} ${Btp} ${apex}`} fill={shade(loc.accent, -0.2)} />);
+    p.push(<polygon key={key("rk4")} points={`${Rp} ${Btp} ${apex}`} fill={roofTop} />);
+    // chimney
+    p.push(<rect key={key("chim")} x={cx + af * 0.42} y={roofY - 22} width={9} height={20} fill={shade(loc.accent, -0.4)} />);
+  } else {
+    p.push(<polygon key={key("roof")} points={diamond(cx, roofY, af, bf)} fill={roofC} stroke="rgba(0,0,0,0.2)" strokeWidth={1} />);
+    p.push(<polygon key={key("para")} points={diamond(cx, roofY - 4, af - 8, bf - 4)} fill="none" stroke={roofTop} strokeWidth={2} />);
+  }
+
+  // ---- distinctive per-business features ----
+  feature(loc, { cx, cy, roofY, af, bf, h, F, Fp, quad, p, key, colors: { lit, dark, roofC, roofTop, trim } });
 
   return (
     <g className={"iso-bld" + (here ? " here" : "")} onClick={onClick} role="button" aria-label={loc.name}>
-      {/* contact shadow */}
-      <polygon points={diamond(cx, cy + 6, AF + 16, BF + 8)} fill="rgba(0,0,0,0.22)" />
+      <polygon points={diamond(cx, cy + 6, af + 16, bf + 8)} fill="rgba(0,0,0,0.22)" />
       {here && (
-        <polygon
-          points={diamond(cx, cy + 2, AF + 12, BF + 6)}
-          fill="none"
-          stroke="#ffd34d"
-          strokeWidth={3}
-          className="here-ring"
-        />
+        <polygon points={diamond(cx, cy + 2, af + 12, bf + 6)} fill="none" stroke="#ffd34d" strokeWidth={3} className="here-ring" />
       )}
-
-      <g className="iso-bld-body">
-        {/* walls */}
-        <polygon points={wallL} fill={dark} />
-        <polygon points={wallR} fill={lit} />
-        {/* soft top-down light on each face */}
-        <polygon points={wallL} fill="url(#glossL)" />
-        <polygon points={wallR} fill="url(#glossR)" />
-        {/* vertical corner highlight */}
-        <line x1={cx} y1={cy + BF} x2={cx} y2={cy + BF - h} stroke="rgba(255,255,255,0.22)" strokeWidth={2} />
-
-        {/* windows */}
-        {winL.map((p, i) => (
-          <polygon key={"wl" + i} points={p} fill="#8fb4cf" stroke="rgba(0,0,0,0.18)" strokeWidth={1} />
-        ))}
-        {winR.map((p, i) => (
-          <polygon key={"wr" + i} points={p} fill="#d6edff" stroke="rgba(0,0,0,0.14)" strokeWidth={1} />
-        ))}
-        {/* door */}
-        <polygon points={door} fill={shade(loc.accent, -0.5)} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
-
-        {/* roof */}
-        <polygon points={diamond(cx, roofY, AF, BF)} fill={roof} stroke="rgba(0,0,0,0.2)" strokeWidth={1} />
-        <polygon points={diamond(cx, roofY, AF - 9, BF - 4.5)} fill="none" stroke={roofTop} strokeWidth={2} />
-        {ac && (
-          <>
-            <polygon points={diamond(cx + 14, roofY - 8, 12, 6)} fill={roofTop} />
-            <polygon
-              points={`${cx + 2},${roofY - 8} ${cx + 14},${roofY - 2} ${cx + 14},${roofY - 10} ${cx + 2},${roofY - 16}`}
-              fill={shade(loc.accent, -0.2)}
-            />
-            <polygon
-              points={`${cx + 26},${roofY - 2} ${cx + 14},${roofY - 8} ${cx + 14},${roofY - 16} ${cx + 26},${roofY - 10}`}
-              fill={dark}
-            />
-          </>
-        )}
-      </g>
+      <g className="iso-bld-body">{p}</g>
     </g>
   );
+}
+
+interface FeatureCtx {
+  cx: number;
+  cy: number;
+  roofY: number;
+  af: number;
+  bf: number;
+  h: number;
+  F: (side: "R" | "L", s: number, t: number) => string;
+  Fp: (side: "R" | "L", s: number, t: number) => { x: number; y: number };
+  quad: (side: "R" | "L", s0: number, s1: number, t0: number, t1: number) => string;
+  p: JSX.Element[];
+  key: (s: string) => string;
+  colors: { lit: string; dark: string; roofC: string; roofTop: string; trim: string };
+}
+
+function feature(loc: Location, c: FeatureCtx) {
+  const { cx, roofY, p, key, Fp, quad } = c;
+  switch (loc.id) {
+    case "factory": {
+      [-24, 4].forEach((ox, i) => {
+        const sx = cx + ox;
+        const top = roofY - 44;
+        p.push(<rect key={key("st" + i)} x={sx - 5} y={top} width={10} height={46} fill="#9aa0a6" />);
+        p.push(<rect key={key("st2" + i)} x={sx} y={top} width={5} height={46} fill="#777d83" />);
+        p.push(<ellipse key={key("stc" + i)} cx={sx} cy={top} rx={6} ry={3} fill="#5f656b" />);
+        p.push(<circle key={key("sm1" + i)} className="smoke" cx={sx} cy={top - 10} r={7} fill="rgba(255,255,255,0.85)" />);
+        p.push(<circle key={key("sm2" + i)} className="smoke" cx={sx + 5} cy={top - 20} r={9} fill="rgba(255,255,255,0.6)" />);
+      });
+      break;
+    }
+    case "bank": {
+      // columns + pediment on the front face
+      [0.22, 0.4, 0.58, 0.76].forEach((s, i) =>
+        p.push(<polygon key={key("col" + i)} points={quad("R", s - 0.03, s + 0.03, 0.06, 0.64)} fill="#efe7d2" />)
+      );
+      p.push(<polygon key={key("ent")} points={quad("R", 0.14, 0.86, 0.64, 0.72)} fill="#f3ecda" />);
+      const a0 = Fp("R", 0.14, 0.72);
+      const a1 = Fp("R", 0.86, 0.72);
+      p.push(
+        <polygon
+          key={key("ped")}
+          points={`${a0.x},${a0.y} ${a1.x},${a1.y} ${(a0.x + a1.x) / 2},${Math.min(a0.y, a1.y) - 22}`}
+          fill="#f6efdf"
+          stroke="rgba(0,0,0,0.18)"
+        />
+      );
+      break;
+    }
+    case "university": {
+      const ty = roofY - 58;
+      p.push(<rect key={key("tw")} x={cx - 14} y={ty} width={28} height={62} fill={c.colors.lit} />);
+      p.push(<rect key={key("tw2")} x={cx} y={ty} width={14} height={62} fill={c.colors.dark} />);
+      p.push(<polygon key={key("twr")} points={`${cx - 16},${ty} ${cx + 16},${ty} ${cx},${ty - 18}`} fill={c.colors.roofC} />);
+      p.push(<circle key={key("clk")} cx={cx} cy={ty + 20} r={10} fill="#fff" stroke="#2a2f45" strokeWidth={2} />);
+      p.push(<line key={key("ch1")} x1={cx} y1={ty + 20} x2={cx} y2={ty + 13} stroke="#2a2f45" strokeWidth={2} />);
+      p.push(<line key={key("ch2")} x1={cx} y1={ty + 20} x2={cx + 6} y2={ty + 20} stroke="#2a2f45" strokeWidth={2} />);
+      break;
+    }
+    case "hitech": {
+      p.push(<line key={key("ant")} x1={cx + 12} y1={roofY} x2={cx + 12} y2={roofY - 48} stroke="#8b94a3" strokeWidth={3} />);
+      p.push(<circle key={key("antb")} className="blink" cx={cx + 12} cy={roofY - 50} r={4} fill="#ff5a6a" />);
+      p.push(<ellipse key={key("dish")} cx={cx - 18} cy={roofY - 14} rx={12} ry={6} fill="#dde3ea" stroke="#9aa3b0" transform={`rotate(-28 ${cx - 18} ${roofY - 14})`} />);
+      p.push(<line key={key("dishs")} x1={cx - 18} y1={roofY - 14} x2={cx - 18} y2={roofY} stroke="#9aa3b0" strokeWidth={2} />);
+      break;
+    }
+    case "cinema": {
+      // marquee band with bulbs over the entrance
+      p.push(<polygon key={key("mq")} points={quad("R", 0.08, 0.92, 0.46, 0.62)} fill="#2a1540" stroke="#ff5bd0" strokeWidth={1.5} />);
+      for (let k = 0; k < 7; k++) {
+        const pt = Fp("R", 0.14 + k * 0.12, 0.47);
+        p.push(<circle key={key("bulb" + k)} className="blink" cx={pt.x} cy={pt.y} r={2.6} fill="#ffd36a" style={{ animationDelay: `${k * 0.12}s` }} />);
+      }
+      break;
+    }
+    case "club": {
+      p.push(<line key={key("dbp")} x1={cx} y1={roofY} x2={cx} y2={roofY - 26} stroke="#9aa3b0" strokeWidth={2} />);
+      p.push(<circle key={key("db")} className="spin" cx={cx} cy={roofY - 36} r={11} fill="#c7d2e0" stroke="#8b94a3" />);
+      p.push(<circle key={key("dbh")} cx={cx - 3} cy={roofY - 40} r={3} fill="#ffffff" />);
+      break;
+    }
+    case "gym": {
+      const m = Fp("R", 0.5, 0.52);
+      p.push(<rect key={key("db1")} x={m.x - 14} y={m.y - 2.5} width={28} height={5} fill="#2a2f45" />);
+      p.push(<circle key={key("dbL")} cx={m.x - 14} cy={m.y} r={6} fill="#2a2f45" />);
+      p.push(<circle key={key("dbR")} cx={m.x + 14} cy={m.y} r={6} fill="#2a2f45" />);
+      break;
+    }
+    case "burger": {
+      p.push(
+        <path
+          key={key("arch")}
+          d={`M ${cx - 20} ${roofY - 6} Q ${cx - 11} ${roofY - 34} ${cx - 2} ${roofY - 6} M ${cx + 2} ${roofY - 6} Q ${cx + 11} ${roofY - 34} ${cx + 20} ${roofY - 6}`}
+          stroke="#ffb400"
+          strokeWidth={7}
+          fill="none"
+          strokeLinecap="round"
+        />
+      );
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 /** Floating name sign, rendered in a top layer so a building never covers it. */
@@ -389,11 +539,11 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
             className={"iso-token" + (walking ? " walking" : "")}
             style={{ transform: `translate(${tokenPos.x}px, ${tokenPos.y}px)` }}
           >
-            <ellipse cx={0} cy={2} rx={15} ry={6} fill="rgba(0,0,0,0.28)" />
+            <ellipse cx={0} cy={2} rx={13} ry={5} fill="rgba(0,0,0,0.28)" />
             <g className="iso-token-bob">
-              <path d="M 0,-52 C 16,-52 20,-34 0,-16 C -20,-34 -16,-52 0,-52 Z" fill="#7c5cff" stroke="#fff" strokeWidth="2.5" />
-              <circle cx={0} cy={-40} r={13} fill="#fff" />
-              <text x={0} y={-34} textAnchor="middle" className="iso-token-face">
+              <path d="M 0,-44 C 13,-44 17,-29 0,-14 C -17,-29 -13,-44 0,-44 Z" fill="#7c5cff" stroke="#fff" strokeWidth="2.5" />
+              <circle cx={0} cy={-34} r={11} fill="#fff" />
+              <text x={0} y={-29} textAnchor="middle" className="iso-token-face">
                 {token}
               </text>
             </g>
