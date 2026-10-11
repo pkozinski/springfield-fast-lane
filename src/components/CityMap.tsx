@@ -1,645 +1,621 @@
-import { useEffect, useRef, useState } from "react";
-import { LOCATIONS, getJob, ringPath } from "../game/data";
+import { useEffect, useRef } from "react";
+import * as THREE from "three";
+import { LOCATIONS, RING, ringPath, getJob } from "../game/data";
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
-import type { Location, LocationId } from "../game/types";
-import { Portrait } from "./Portrait";
-import { Icon } from "./Icon";
+import type { GameState, Location, LocationId } from "../game/types";
 import Clock from "./Clock";
 
 /* ----------------------------------------------------------------------------
-   Isometric diorama renderer.
-   Everything is one SVG in scene coordinates so painter-ordering is automatic.
+   Real 3D board, built procedurally with Three.js (all original meshes).
 ---------------------------------------------------------------------------- */
+const COLS = 5;
+const ROWS = 4;
+const SP = 2.05; // spacing between board cells
+const STEP = 0.2; // seconds per space hopped
 
-// tile + scene geometry (scene units == SVG user units)
-// A higher B:A ratio tilts the camera toward a top-down "board" view.
-const A = 76; // tile half-width
-const B = 54; // tile half-height
-const OX = 340;
-const OY = 120;
-const SCENE_W = 780;
-const SCENE_H = 640;
-const DEPTH = 26; // island thickness
-const AF = 50; // building footprint half-width
-const BF = 36; // building footprint half-height
+const cellToWorld = (gx: number, gy: number) =>
+  new THREE.Vector3((gx - (COLS - 1) / 2) * SP, 0, (gy - (ROWS - 1) / 2) * SP);
+/** Token stands on the inner walkway, in front of its building (offset toward centre). */
+const tokenWorld = (gx: number, gy: number) => {
+  const p = cellToWorld(gx, gy);
+  const dir = new THREE.Vector3(-p.x, 0, -p.z);
+  if (dir.lengthSq() > 1e-4) dir.normalize().multiplyScalar(0.92);
+  return new THREE.Vector3(p.x + dir.x, 0, p.z + dir.z);
+};
+const ringIndexOf = (id: LocationId) => RING.findIndex((c) => c.id === id);
 
-const iso = (gx: number, gy: number) => ({ x: OX + (gx - gy) * A, y: OY + (gx + gy) * B });
-const diamond = (cx: number, cy: number, a: number, b: number) =>
-  `${cx},${cy - b} ${cx + a},${cy} ${cx},${cy + b} ${cx - a},${cy}`;
-
-// hex colour shade: amt in [-1,1], + lightens, - darkens
 function shade(hex: string, amt: number) {
-  const n = parseInt(hex.slice(1), 16);
-  let r = (n >> 16) & 255,
-    g = (n >> 8) & 255,
-    b = n & 255;
-  const t = amt < 0 ? 0 : 255;
-  const p = Math.abs(amt);
-  r = Math.round((t - r) * p + r);
-  g = Math.round((t - g) * p + g);
-  b = Math.round((t - b) * p + b);
-  return `rgb(${r},${g},${b})`;
+  const c = new THREE.Color(hex);
+  if (amt >= 0) c.lerp(new THREE.Color("#ffffff"), amt);
+  else c.lerp(new THREE.Color("#000000"), -amt);
+  return c;
 }
 
-// per-category building massing
-interface Mass {
-  h: number;
-  roof: "flat" | "hip";
-  fw: number;
+function makeLabel(text: string) {
+  const fs = 34;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = `600 ${fs}px Georgia, serif`;
+  const w = Math.ceil(ctx.measureText(text).width);
+  canvas.width = w + 34;
+  canvas.height = fs + 26;
+  const c = canvas.getContext("2d")!;
+  c.font = `600 ${fs}px Georgia, serif`;
+  c.beginPath();
+  (c as any).roundRect(2, 2, canvas.width - 4, canvas.height - 4, 12);
+  c.fillStyle = "#fbf6ea";
+  c.fill();
+  c.lineWidth = 3;
+  c.strokeStyle = "#c9a24b";
+  c.stroke();
+  c.fillStyle = "#1c1710";
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true })
+  );
+  const s = 0.0095;
+  sprite.scale.set(canvas.width * s, canvas.height * s, 1);
+  sprite.renderOrder = 10;
+  return sprite;
 }
-function massing(loc: Location): Mass {
+
+function massing(loc: Location): { h: number; w: number } {
   switch (loc.category) {
     case "home":
-      return { h: 42, roof: "hip", fw: 0.86 };
+      return { h: 1.1, w: 1.15 };
     case "food":
-      return { h: 52, roof: "flat", fw: 0.96 };
+      return { h: 1.3, w: 1.2 };
     case "leisure":
-      return { h: 56, roof: "flat", fw: 1.0 };
-    case "employment":
-      return { h: 64, roof: "flat", fw: 1.0 };
-    case "university":
-      return { h: 68, roof: "flat", fw: 1.03 };
+      return { h: 1.5, w: 1.25 };
     case "bank":
-      return { h: 72, roof: "flat", fw: 1.03 };
+      return { h: 2.1, w: 1.3 };
+    case "university":
+      return { h: 1.9, w: 1.3 };
     case "workplace":
-      return { h: 58, roof: "flat", fw: 1.12 };
-    case "shop":
+      return { h: 1.5, w: 1.4 };
     default:
-      return { h: 62, roof: "flat", fw: 1.06 };
+      return { h: 1.75, w: 1.3 };
   }
 }
 
-function IsoBuilding({
-  loc,
-  here,
-  onClick,
-  onHover,
-}: {
-  loc: Location;
-  here: boolean;
-  onClick: () => void;
-  onHover?: (enter: boolean) => void;
-}) {
-  const { x: cx, y: cy } = iso(loc.x, loc.y);
-  const { h, roof, fw } = massing(loc);
-  const af = AF * fw;
-  const bf = BF * fw;
-  const roofY = cy - h;
-
-  const lit = shade(loc.accent, 0.08);
-  const dark = shade(loc.accent, -0.34);
-  const roofC = shade(loc.accent, -0.12);
-  const roofTop = shade(loc.accent, 0.16);
-  const frame = shade(loc.accent, -0.46);
-  const trim = shade(loc.accent, 0.22);
-  const baseC = shade(loc.accent, -0.44);
-
-  // (s,t) -> scene point on a wall face. s runs along the base edge, t is up.
-  const R = (s: number, t: number) => `${cx + s * af},${cy + bf - s * bf - t * h}`;
-  const L = (s: number, t: number) => `${cx - s * af},${cy + bf - s * bf - t * h}`;
-  const F = (side: "R" | "L", s: number, t: number) => (side === "R" ? R(s, t) : L(s, t));
-  const Fp = (side: "R" | "L", s: number, t: number) => ({
-    x: cx + (side === "R" ? s * af : -s * af),
-    y: cy + bf - s * bf - t * h,
+/** Build one building as a group of simple lit meshes. */
+function buildBuilding(loc: Location) {
+  const g = new THREE.Group();
+  g.userData.locId = loc.id;
+  const { h, w } = massing(loc);
+  const d = w;
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(loc.accent),
+    roughness: 0.65,
+    metalness: 0.05,
   });
-  const quad = (side: "R" | "L", s0: number, s1: number, t0: number, t1: number) =>
-    `${F(side, s0, t0)} ${F(side, s1, t0)} ${F(side, s1, t1)} ${F(side, s0, t1)}`;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bodyMat);
+  body.position.y = h / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  body.userData.locId = loc.id;
+  body.userData.baseColor = bodyMat.color.clone();
+  g.add(body);
 
-  const p: JSX.Element[] = [];
-  const key = (s: string) => `${loc.id}-${s}`;
+  // windows (emissive) on +Z and +X faces
+  const winMat = new THREE.MeshStandardMaterial({
+    color: "#bfe3ff",
+    emissive: "#4a7ea8",
+    emissiveIntensity: 0.5,
+    roughness: 0.3,
+  });
+  const floors = Math.max(1, Math.round(h / 0.55));
+  for (let f = 0; f < floors; f++) {
+    const wy = 0.4 + f * 0.55;
+    if (wy > h - 0.25) break;
+    for (const sx of [-0.28, 0.28]) {
+      const wz = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.04), winMat);
+      wz.position.set(sx * w, wy, d / 2 + 0.01);
+      g.add(wz);
+      const wx = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.26), winMat);
+      wx.position.set(w / 2 + 0.01, wy, sx * d);
+      g.add(wx);
+    }
+  }
 
-  const win = (side: "R" | "L", sc: number, tc: number, hw: number, th: number, k: string) => {
-    const glass = side === "R" ? "#d9eeff" : "#a9c9e2";
-    p.push(
-      <polygon key={key(k + "f")} points={quad(side, sc - hw, sc + hw, tc - th, tc + th)} fill={frame} />,
-      <polygon
-        key={key(k + "g")}
-        points={quad(side, sc - hw * 0.76, sc + hw * 0.76, tc - th * 0.76, tc + th * 0.76)}
-        fill={glass}
-      />,
-      <polygon
-        key={key(k + "h")}
-        points={`${F(side, sc - hw * 0.76, tc + th * 0.05)} ${F(side, sc - hw * 0.05, tc + th * 0.76)} ${F(
-          side,
-          sc - hw * 0.76,
-          tc + th * 0.76
-        )}`}
-        fill="rgba(255,255,255,0.45)"
-      />
+  // door
+  const doorMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.55), roughness: 0.6 });
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.05), doorMat);
+  door.position.set(0, 0.25, d / 2 + 0.01);
+  g.add(door);
+
+  // roof
+  const roofMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.2), roughness: 0.7 });
+  if (loc.category === "home") {
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.82, 0.7, 4), roofMat);
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = h + 0.33;
+    roof.castShadow = true;
+    g.add(roof);
+    const chim = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.16), roofMat);
+    chim.position.set(w * 0.25, h + 0.4, d * 0.2);
+    g.add(chim);
+  } else {
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.16, d + 0.12), roofMat);
+    roof.position.y = h + 0.08;
+    roof.castShadow = true;
+    g.add(roof);
+    // parapet rim
+    const rim = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.16, 0.08, d + 0.16),
+      new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.18), roughness: 0.6 })
     );
+    rim.position.y = h + 0.16;
+    g.add(rim);
+  }
+
+  // distinctive features
+  const gold = new THREE.MeshStandardMaterial({ color: "#d9b24a", roughness: 0.35, metalness: 0.6 });
+  const metal = new THREE.MeshStandardMaterial({ color: "#8d949c", roughness: 0.5, metalness: 0.4 });
+  if (loc.id === "factory") {
+    for (const ox of [-0.3, 0.1]) {
+      const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.9, 12), metal);
+      stack.position.set(ox, h + 0.45, -0.2);
+      stack.castShadow = true;
+      g.add(stack);
+    }
+  } else if (loc.id === "bank") {
+    for (const ox of [-0.42, -0.14, 0.14, 0.42]) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, h * 0.8, 10), gold);
+      col.position.set(ox, (h * 0.8) / 2, d / 2 + 0.05);
+      g.add(col);
+    }
+    const ped = new THREE.Mesh(new THREE.ConeGeometry(w * 0.8, 0.4, 3), gold);
+    ped.rotation.y = Math.PI / 2;
+    ped.scale.z = 0.2;
+    ped.position.set(0, h + 0.2, d / 2 - 0.1);
+    g.add(ped);
+  } else if (loc.id === "university") {
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.5), bodyMat);
+    tower.position.y = h + 0.5;
+    tower.castShadow = true;
+    g.add(tower);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.5, 4), roofMat);
+    top.rotation.y = Math.PI / 4;
+    top.position.y = h + 1.25;
+    g.add(top);
+    const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 16), gold);
+    clock.rotation.x = Math.PI / 2;
+    clock.position.set(0, h + 0.6, 0.26);
+    g.add(clock);
+  } else if (loc.id === "hitech") {
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 8), metal);
+    ant.position.set(0.3, h + 0.5, 0);
+    g.add(ant);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), new THREE.MeshStandardMaterial({ color: "#ff5a6a", emissive: "#ff2a3a", emissiveIntensity: 0.8 }));
+    tip.position.set(0.3, h + 1.0, 0);
+    g.add(tip);
+  } else if (loc.id === "club") {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metal);
+    pole.position.y = h + 0.3;
+    g.add(pole);
+    const ball = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.22, 1),
+      new THREE.MeshStandardMaterial({ color: "#cdd6e2", roughness: 0.2, metalness: 0.9, flatShading: true })
+    );
+    ball.position.y = h + 0.7;
+    ball.userData.spin = true;
+    g.add(ball);
+  } else if (loc.id === "burger") {
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 10, 20, Math.PI), gold);
+    arch.position.set(0, h + 0.2, 0);
+    g.add(arch);
+  }
+
+  // label + optional job star
+  const label = makeLabel(loc.short);
+  label.position.set(0, h + (loc.category === "home" ? 1.1 : 1.0), 0);
+  label.userData.labelBaseY = label.position.y;
+  g.add(label);
+
+  return { group: g, body, label };
+}
+
+interface Api {
+  dispose: () => void;
+  sync: (locId: LocationId) => void;
+}
+
+function initScene(
+  mount: HTMLDivElement,
+  deps: { dispatch: (a: any) => void; onEnter: () => (id: LocationId) => void; getState: () => GameState }
+): Api {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color("#171119");
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  mount.appendChild(renderer.domElement);
+  renderer.domElement.style.width = "100%";
+  renderer.domElement.style.height = "100%";
+  renderer.domElement.style.display = "block";
+
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+  camera.position.set(0, 8.6, 9.6);
+  camera.lookAt(0, 0.2, 0);
+
+  // lights
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x3a2c1a, 0.55));
+  const amb = new THREE.AmbientLight(0xffffff, 0.25);
+  scene.add(amb);
+  const sun = new THREE.DirectionalLight(0xfff4de, 1.25);
+  sun.position.set(6, 11, 5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 40;
+  const sc = sun.shadow.camera as THREE.OrthographicCamera;
+  sc.left = -9;
+  sc.right = 9;
+  sc.top = 9;
+  sc.bottom = -9;
+  sun.shadow.bias = -0.0004;
+  scene.add(sun);
+
+  // island slab
+  const islW = COLS * SP + 1.1;
+  const islD = ROWS * SP + 1.1;
+  const grass = new THREE.MeshStandardMaterial({ color: "#6fb24e", roughness: 0.95 });
+  const dirt = new THREE.MeshStandardMaterial({ color: "#7a5c36", roughness: 1 });
+  const islandMats = [dirt, dirt, grass, dirt, dirt, dirt];
+  const island = new THREE.Mesh(new THREE.BoxGeometry(islW, 1.0, islD), islandMats);
+  island.position.y = -0.5;
+  island.receiveShadow = true;
+  scene.add(island);
+
+  // walkway tiles on ring cells
+  const roadMat = new THREE.MeshStandardMaterial({ color: "#d8c49a", roughness: 0.9 });
+  RING.forEach((c) => {
+    const tile = new THREE.Mesh(new THREE.BoxGeometry(SP * 0.96, 0.06, SP * 0.96), roadMat);
+    const p = cellToWorld(c.x, c.y);
+    tile.position.set(p.x, 0.03, p.z);
+    tile.receiveShadow = true;
+    scene.add(tile);
+  });
+
+  // central plaza + fountain
+  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.08, 36), roadMat);
+  plaza.position.set(0, 0.04, (1.5 - (ROWS - 1) / 2) * SP);
+  plaza.receiveShadow = true;
+  scene.add(plaza);
+  const fBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.6, 0.22, 24),
+    new THREE.MeshStandardMaterial({ color: "#cdbf9b", roughness: 0.8 })
+  );
+  fBase.position.copy(plaza.position);
+  fBase.position.y = 0.15;
+  fBase.castShadow = true;
+  scene.add(fBase);
+  const water = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.42, 0.12, 24),
+    new THREE.MeshStandardMaterial({ color: "#7fc7e6", roughness: 0.2, metalness: 0.3 })
+  );
+  water.position.copy(fBase.position);
+  water.position.y = 0.22;
+  scene.add(water);
+
+  // trees
+  const trunkMat = new THREE.MeshStandardMaterial({ color: "#6b4a2b", roughness: 1 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: "#3f9b52", roughness: 0.9 });
+  const treeCells: [number, number][] = [
+    [0, 1],
+    [1, 1],
+    [3, 1],
+    [1, 2],
+    [3, 2],
+  ];
+  treeCells.forEach(([gx, gy]) => {
+    const t = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.5, 8), trunkMat);
+    trunk.position.y = 0.25;
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 10), leafMat);
+    leaves.position.y = 0.95;
+    leaves.castShadow = true;
+    t.add(trunk, leaves);
+    const p = cellToWorld(gx, gy);
+    t.position.set(p.x, 0.05, p.z);
+    scene.add(t);
+  });
+
+  // buildings
+  const pickables: THREE.Object3D[] = [];
+  const bodies: { id: LocationId; body: THREE.Mesh }[] = [];
+  const jobMarkers: Record<string, THREE.Mesh> = {};
+  LOCATIONS.forEach((loc) => {
+    const { group, body } = buildBuilding(loc);
+    const p = cellToWorld(loc.x, loc.y);
+    group.position.set(p.x, 0, p.z);
+    scene.add(group);
+    pickables.push(group);
+    bodies.push({ id: loc.id, body });
+
+    const star = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.16),
+      new THREE.MeshStandardMaterial({ color: "#ffcf4d", emissive: "#a9780a", emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.3 })
+    );
+    star.position.set(p.x + massing(loc).w * 0.5, massing(loc).h + 0.5, p.z + massing(loc).w * 0.5);
+    star.visible = false;
+    scene.add(star);
+    jobMarkers[loc.id] = star;
+  });
+
+  // token: a glossy game pawn with a highlight ring
+  const token = new THREE.Group();
+  const pawnMat = new THREE.MeshStandardMaterial({ color: "#e6c45c", roughness: 0.3, metalness: 0.7 });
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.14, 20), pawnMat);
+  foot.position.y = 0.07;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.5, 16), pawnMat);
+  stem.position.y = 0.42;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 20), pawnMat);
+  head.position.y = 0.82;
+  [foot, stem, head].forEach((m) => {
+    m.castShadow = true;
+    token.add(m);
+  });
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.05, 12, 32),
+    new THREE.MeshStandardMaterial({ color: "#ffd86a", emissive: "#c99a2a", emissiveIntensity: 0.7 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.04;
+  token.add(ring);
+  scene.add(token);
+
+  let curIndex = ringIndexOf(deps.getState().location);
+  if (curIndex < 0) curIndex = 0;
+  const startP = tokenWorld(RING[curIndex].x, RING[curIndex].y);
+  token.position.set(startP.x, 0, startP.z);
+
+  // ---- interaction + animation ----
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let hoverId: LocationId | null = null;
+
+  const walk = {
+    active: false,
+    cells: [] as THREE.Vector3[],
+    seg: 0,
+    t: 0,
+    target: null as LocationId | null,
   };
 
-  // ---- walls + global shading ----
-  const wallL = `${cx},${cy + bf} ${cx - af},${cy} ${cx - af},${cy - h} ${cx},${cy + bf - h}`;
-  const wallR = `${cx},${cy + bf} ${cx + af},${cy} ${cx + af},${cy - h} ${cx},${cy + bf - h}`;
-  p.push(<polygon key={key("wl")} points={wallL} fill={dark} />);
-  p.push(<polygon key={key("wr")} points={wallR} fill={lit} />);
-
-  // ---- floors ----
-  const groundT = Math.min(0.42, 40 / h);
-  const upper = Math.max(1, Math.round((h - 40) / 28));
-  const upT = (1 - groundT) / upper;
-
-  // base plinth
-  p.push(<polygon key={key("plL")} points={quad("L", 0, 1, 0, 0.05)} fill={shade(loc.accent, -0.54)} />);
-  p.push(<polygon key={key("plR")} points={quad("R", 0, 1, 0, 0.05)} fill={baseC} />);
-
-  // upper-floor windows + string courses
-  for (let i = 0; i < upper; i++) {
-    const tc = Math.min(0.84, groundT + (i + 0.5) * upT);
-    const th = Math.min(upT * 0.3, 0.09);
-    [0.28, 0.72].forEach((sc, j) => {
-      win("R", sc, tc, 0.1, th, `ur${i}${j}`);
-      win("L", sc, tc, 0.1, th, `ul${i}${j}`);
-    });
-    if (i > 0) {
-      const tb = groundT + i * upT;
-      p.push(<polygon key={key("scR" + i)} points={quad("R", 0.05, 0.95, tb - 0.01, tb + 0.01)} fill={trim} />);
-      p.push(<polygon key={key("scL" + i)} points={quad("L", 0.05, 0.95, tb - 0.01, tb + 0.01)} fill={shade(loc.accent, -0.2)} />);
+  function setHover(id: LocationId | null) {
+    if (hoverId === id) return;
+    // restore previous
+    if (hoverId) {
+      const prev = bodies.find((b) => b.id === hoverId);
+      if (prev) (prev.body.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
     }
+    hoverId = id;
+    if (id) {
+      const b = bodies.find((x) => x.id === id);
+      if (b) (b.body.material as THREE.MeshStandardMaterial).emissive.setHex(0x3a2d10);
+    }
+    renderer.domElement.style.cursor = id ? "pointer" : "default";
   }
 
-  // ---- ground-floor storefront (front/right face) ----
-  p.push(<polygon key={key("sfF")} points={quad("R", 0.12, 0.88, 0.05, groundT - 0.05)} fill={frame} />);
-  p.push(<polygon key={key("sfG")} points={quad("R", 0.14, 0.86, 0.07, groundT - 0.07)} fill="#bfe0f5" />);
-  // glass pane dividers
-  [0.32, 0.5, 0.68].forEach((s, i) =>
-    p.push(<polygon key={key("sfd" + i)} points={quad("R", s - 0.006, s + 0.006, 0.07, groundT - 0.07)} fill={frame} />)
-  );
-  // door
-  p.push(<polygon key={key("door")} points={quad("R", 0.45, 0.6, 0, groundT - 0.09)} fill={shade(loc.accent, -0.5)} />);
-  p.push(<polygon key={key("knob")} points={quad("R", 0.575, 0.59, groundT * 0.4, groundT * 0.46)} fill="#ffe08a" />);
-  // side-face ground windows
-  win("L", 0.3, groundT * 0.52, 0.11, groundT * 0.3, "sgl0");
-  win("L", 0.7, groundT * 0.52, 0.11, groundT * 0.3, "sgl1");
-
-  // ---- awning with stripes over the storefront ----
-  const awn = shade(loc.accent, -0.05);
-  for (let k = 0; k < 8; k++) {
-    const s0 = 0.1 + k * 0.1;
-    p.push(
-      <polygon
-        key={key("aw" + k)}
-        points={quad("R", s0, s0 + 0.1, groundT - 0.02, groundT + 0.05)}
-        fill={k % 2 ? "#ffffff" : awn}
-      />
-    );
-  }
-  p.push(<polygon key={key("awlip")} points={quad("R", 0.1, 0.9, groundT + 0.045, groundT + 0.06)} fill={shade(loc.accent, -0.25)} />);
-
-  // ---- cornice ----
-  p.push(<polygon key={key("coR")} points={quad("R", 0, 1, 0.9, 0.965)} fill={trim} />);
-  p.push(<polygon key={key("coL")} points={quad("L", 0, 1, 0.9, 0.965)} fill={shade(loc.accent, -0.18)} />);
-
-  // gloss over faces + corner highlight
-  p.push(<polygon key={key("glL")} points={wallL} fill="url(#glossL)" />);
-  p.push(<polygon key={key("glR")} points={wallR} fill="url(#glossR)" />);
-  p.push(<line key={key("corner")} x1={cx} y1={cy + bf} x2={cx} y2={cy + bf - h} stroke="rgba(255,255,255,0.22)" strokeWidth={2} />);
-
-  // ---- roof ----
-  if (roof === "hip") {
-    const apex = `${cx},${roofY - 30}`;
-    const Tp = `${cx},${roofY - bf}`;
-    const Rp = `${cx + af},${roofY}`;
-    const Btp = `${cx},${roofY + bf}`;
-    const Lp = `${cx - af},${roofY}`;
-    p.push(<polygon key={key("rk1")} points={`${Tp} ${Lp} ${apex}`} fill={shade(loc.accent, -0.3)} />);
-    p.push(<polygon key={key("rk2")} points={`${Tp} ${Rp} ${apex}`} fill={roofC} />);
-    p.push(<polygon key={key("rk3")} points={`${Lp} ${Btp} ${apex}`} fill={shade(loc.accent, -0.2)} />);
-    p.push(<polygon key={key("rk4")} points={`${Rp} ${Btp} ${apex}`} fill={roofTop} />);
-    // chimney
-    p.push(<rect key={key("chim")} x={cx + af * 0.42} y={roofY - 22} width={9} height={20} fill={shade(loc.accent, -0.4)} />);
-  } else {
-    p.push(<polygon key={key("roof")} points={diamond(cx, roofY, af, bf)} fill={roofC} stroke="rgba(0,0,0,0.2)" strokeWidth={1} />);
-    p.push(<polygon key={key("para")} points={diamond(cx, roofY - 4, af - 8, bf - 4)} fill="none" stroke={roofTop} strokeWidth={2} />);
-  }
-
-  // ---- distinctive per-business features ----
-  feature(loc, { cx, cy, roofY, af, bf, h, F, Fp, quad, p, key, colors: { lit, dark, roofC, roofTop, trim } });
-
-  return (
-    <g
-      className={"iso-bld" + (here ? " here" : "")}
-      onClick={onClick}
-      onMouseEnter={() => onHover?.(true)}
-      onMouseLeave={() => onHover?.(false)}
-      role="button"
-      aria-label={loc.name}
-    >
-      <polygon points={diamond(cx, cy + 6, af + 16, bf + 8)} fill="rgba(0,0,0,0.22)" />
-      {here && (
-        <polygon points={diamond(cx, cy + 2, af + 12, bf + 6)} fill="none" stroke="#ffd34d" strokeWidth={3} className="here-ring" />
-      )}
-      <g className="iso-bld-body">{p}</g>
-    </g>
-  );
-}
-
-interface FeatureCtx {
-  cx: number;
-  cy: number;
-  roofY: number;
-  af: number;
-  bf: number;
-  h: number;
-  F: (side: "R" | "L", s: number, t: number) => string;
-  Fp: (side: "R" | "L", s: number, t: number) => { x: number; y: number };
-  quad: (side: "R" | "L", s0: number, s1: number, t0: number, t1: number) => string;
-  p: JSX.Element[];
-  key: (s: string) => string;
-  colors: { lit: string; dark: string; roofC: string; roofTop: string; trim: string };
-}
-
-function feature(loc: Location, c: FeatureCtx) {
-  const { cx, roofY, p, key, Fp, quad } = c;
-  switch (loc.id) {
-    case "factory": {
-      [-24, 4].forEach((ox, i) => {
-        const sx = cx + ox;
-        const top = roofY - 44;
-        p.push(<rect key={key("st" + i)} x={sx - 5} y={top} width={10} height={46} fill="#9aa0a6" />);
-        p.push(<rect key={key("st2" + i)} x={sx} y={top} width={5} height={46} fill="#777d83" />);
-        p.push(<ellipse key={key("stc" + i)} cx={sx} cy={top} rx={6} ry={3} fill="#5f656b" />);
-        p.push(<circle key={key("sm1" + i)} className="smoke" cx={sx} cy={top - 10} r={7} fill="rgba(255,255,255,0.85)" />);
-        p.push(<circle key={key("sm2" + i)} className="smoke" cx={sx + 5} cy={top - 20} r={9} fill="rgba(255,255,255,0.6)" />);
-      });
-      break;
-    }
-    case "bank": {
-      // columns + pediment on the front face
-      [0.22, 0.4, 0.58, 0.76].forEach((s, i) =>
-        p.push(<polygon key={key("col" + i)} points={quad("R", s - 0.03, s + 0.03, 0.06, 0.64)} fill="#efe7d2" />)
-      );
-      p.push(<polygon key={key("ent")} points={quad("R", 0.14, 0.86, 0.64, 0.72)} fill="#f3ecda" />);
-      const a0 = Fp("R", 0.14, 0.72);
-      const a1 = Fp("R", 0.86, 0.72);
-      p.push(
-        <polygon
-          key={key("ped")}
-          points={`${a0.x},${a0.y} ${a1.x},${a1.y} ${(a0.x + a1.x) / 2},${Math.min(a0.y, a1.y) - 22}`}
-          fill="#f6efdf"
-          stroke="rgba(0,0,0,0.18)"
-        />
-      );
-      break;
-    }
-    case "university": {
-      const ty = roofY - 58;
-      p.push(<rect key={key("tw")} x={cx - 14} y={ty} width={28} height={62} fill={c.colors.lit} />);
-      p.push(<rect key={key("tw2")} x={cx} y={ty} width={14} height={62} fill={c.colors.dark} />);
-      p.push(<polygon key={key("twr")} points={`${cx - 16},${ty} ${cx + 16},${ty} ${cx},${ty - 18}`} fill={c.colors.roofC} />);
-      p.push(<circle key={key("clk")} cx={cx} cy={ty + 20} r={10} fill="#fff" stroke="#2a2f45" strokeWidth={2} />);
-      p.push(<line key={key("ch1")} x1={cx} y1={ty + 20} x2={cx} y2={ty + 13} stroke="#2a2f45" strokeWidth={2} />);
-      p.push(<line key={key("ch2")} x1={cx} y1={ty + 20} x2={cx + 6} y2={ty + 20} stroke="#2a2f45" strokeWidth={2} />);
-      break;
-    }
-    case "hitech": {
-      p.push(<line key={key("ant")} x1={cx + 12} y1={roofY} x2={cx + 12} y2={roofY - 48} stroke="#8b94a3" strokeWidth={3} />);
-      p.push(<circle key={key("antb")} className="blink" cx={cx + 12} cy={roofY - 50} r={4} fill="#ff5a6a" />);
-      p.push(<ellipse key={key("dish")} cx={cx - 18} cy={roofY - 14} rx={12} ry={6} fill="#dde3ea" stroke="#9aa3b0" transform={`rotate(-28 ${cx - 18} ${roofY - 14})`} />);
-      p.push(<line key={key("dishs")} x1={cx - 18} y1={roofY - 14} x2={cx - 18} y2={roofY} stroke="#9aa3b0" strokeWidth={2} />);
-      break;
-    }
-    case "cinema": {
-      // marquee band with bulbs over the entrance
-      p.push(<polygon key={key("mq")} points={quad("R", 0.08, 0.92, 0.46, 0.62)} fill="#2a1540" stroke="#ff5bd0" strokeWidth={1.5} />);
-      for (let k = 0; k < 7; k++) {
-        const pt = Fp("R", 0.14 + k * 0.12, 0.47);
-        p.push(<circle key={key("bulb" + k)} className="blink" cx={pt.x} cy={pt.y} r={2.6} fill="#ffd36a" style={{ animationDelay: `${k * 0.12}s` }} />);
+  function pick(ev: PointerEvent): LocationId | null {
+    const r = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
+    pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(pickables, true);
+    for (const h of hits) {
+      let o: THREE.Object3D | null = h.object;
+      while (o) {
+        if (o.userData.locId) return o.userData.locId as LocationId;
+        o = o.parent;
       }
-      break;
     }
-    case "club": {
-      p.push(<line key={key("dbp")} x1={cx} y1={roofY} x2={cx} y2={roofY - 26} stroke="#9aa3b0" strokeWidth={2} />);
-      p.push(<circle key={key("db")} className="spin" cx={cx} cy={roofY - 36} r={11} fill="#c7d2e0" stroke="#8b94a3" />);
-      p.push(<circle key={key("dbh")} cx={cx - 3} cy={roofY - 40} r={3} fill="#ffffff" />);
-      break;
-    }
-    case "gym": {
-      const m = Fp("R", 0.5, 0.52);
-      p.push(<rect key={key("db1")} x={m.x - 14} y={m.y - 2.5} width={28} height={5} fill="#2a2f45" />);
-      p.push(<circle key={key("dbL")} cx={m.x - 14} cy={m.y} r={6} fill="#2a2f45" />);
-      p.push(<circle key={key("dbR")} cx={m.x + 14} cy={m.y} r={6} fill="#2a2f45" />);
-      break;
-    }
-    case "burger": {
-      p.push(
-        <path
-          key={key("arch")}
-          d={`M ${cx - 20} ${roofY - 6} Q ${cx - 11} ${roofY - 34} ${cx - 2} ${roofY - 6} M ${cx + 2} ${roofY - 6} Q ${cx + 11} ${roofY - 34} ${cx + 20} ${roofY - 6}`}
-          stroke="#ffb400"
-          strokeWidth={7}
-          fill="none"
-          strokeLinecap="round"
-        />
-      );
-      break;
-    }
-    default:
-      break;
+    return null;
   }
-}
 
-/** Floating name sign, rendered in a top layer so a building never covers it. */
-function IsoSign({ loc, hasJob }: { loc: Location; hasJob: boolean }) {
-  const { x: cx, y: cy } = iso(loc.x, loc.y);
-  const { h } = massing(loc);
-  const topY = cy - h - BF - 16;
-  const w = Math.max(44, loc.short.length * 7.6 + 14);
-  return (
-    <g className="iso-sign" transform={`translate(${cx} ${topY})`}>
-      <polygon points={`-5,9 5,9 0,15`} fill="#ffffff" />
-      <rect x={-w / 2} y={-10} width={w} height={20} rx={10} fill="#ffffff" />
-      <text x={0} y={4} textAnchor="middle" className="iso-sign-text">
-        {loc.short}
-      </text>
-      {hasJob && (
-        <g transform={`translate(${w / 2 + 11} 0)`}>
-          <circle r={10} fill="#ffcf33" />
-          <text x={0} y={4} textAnchor="middle" className="iso-job-text">
-            ★
-          </text>
-        </g>
-      )}
-    </g>
-  );
-}
+  function startWalk(toId: LocationId) {
+    const st = deps.getState();
+    if (walk.active) return;
+    if (toId === st.location) {
+      deps.onEnter()(toId);
+      return;
+    }
+    if (travelCost(st, toId) > st.hours) {
+      deps.dispatch({ type: "MOVE", to: toId });
+      return;
+    }
+    const path = ringPath(st.location, toId);
+    if (path.length === 0) {
+      deps.dispatch({ type: "MOVE", to: toId });
+      deps.onEnter()(toId);
+      return;
+    }
+    walk.cells = [
+      tokenWorld(RING[curIndex].x, RING[curIndex].y),
+      ...path.map((c) => tokenWorld(c.x, c.y)),
+    ];
+    walk.seg = 0;
+    walk.t = 0;
+    walk.active = true;
+    walk.target = toId;
+    setHover(null);
+  }
 
-function IsoTree({ gx, gy, scale = 1 }: { gx: number; gy: number; scale?: number }) {
-  const { x, y } = iso(gx, gy);
-  const s = scale;
-  return (
-    <g className="iso-tree" transform={`translate(${x} ${y})`}>
-      <ellipse cx={0} cy={2} rx={16 * s} ry={7 * s} fill="rgba(0,0,0,0.18)" />
-      <rect x={-3 * s} y={-18 * s} width={6 * s} height={22 * s} rx={2} fill="#7a5433" />
-      <circle cx={0} cy={-30 * s} r={16 * s} fill="#3f9b52" />
-      <circle cx={-9 * s} cy={-22 * s} r={11 * s} fill="#4bb062" />
-      <circle cx={9 * s} cy={-24 * s} r={10 * s} fill="#368a48" />
-      <circle cx={-4 * s} cy={-34 * s} r={9 * s} fill="#58c070" />
-    </g>
-  );
-}
+  const onMove = (e: PointerEvent) => {
+    if (walk.active) return;
+    setHover(pick(e));
+  };
+  const onClick = (e: PointerEvent) => {
+    const id = pick(e);
+    if (id) startWalk(id);
+  };
+  renderer.domElement.addEventListener("pointermove", onMove);
+  renderer.domElement.addEventListener("pointerdown", onClick);
 
-function Fountain({ gx, gy }: { gx: number; gy: number }) {
-  const { x, y } = iso(gx, gy);
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      <polygon points={diamond(0, 0, 46, 23)} fill="#d9c49a" stroke="rgba(0,0,0,0.15)" />
-      <polygon points={diamond(0, 0, 34, 17)} fill="#8fd0e8" stroke="rgba(255,255,255,0.5)" />
-      <polygon points={diamond(0, -4, 10, 5)} fill="#cfeaf4" />
-      <rect x={-3} y={-20} width={6} height={16} rx={3} fill="#bcd9e6" />
-      <circle cx={0} cy={-22} r={5} fill="#eaf6fb" />
-    </g>
-  );
-}
+  // sync job markers + here ring to current state
+  function refreshMarkers() {
+    const st = deps.getState();
+    const job = st.jobId ? getJob(st.jobId) : null;
+    Object.entries(jobMarkers).forEach(([id, m]) => (m.visible = job?.locationId === id));
+  }
+  refreshMarkers();
 
-const STEP_MS = 190; // time per board space hopped
+  function sync(locId: LocationId) {
+    const idx = ringIndexOf(locId);
+    refreshMarkers();
+    if (idx < 0 || idx === curIndex || walk.active) return;
+    // snap token to the new location (e.g. after a week rolls over)
+    curIndex = idx;
+    const p = tokenWorld(RING[idx].x, RING[idx].y);
+    token.position.set(p.x, 0, p.z);
+  }
+
+  // resize
+  function resize() {
+    const w = mount.clientWidth || 1;
+    const h = mount.clientHeight || 1;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  const ro = new ResizeObserver(resize);
+  ro.observe(mount);
+
+  // animation loop
+  const clock = new THREE.Clock();
+  let raf = 0;
+  const tick = () => {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const time = clock.elapsedTime;
+
+    // spin disco balls
+    scene.traverse((o) => {
+      if ((o as any).userData?.spin) o.rotation.y += dt * 1.5;
+    });
+    water.position.y = 0.22 + Math.sin(time * 2) * 0.01;
+
+    // hover bob
+    bodies.forEach((b) => {
+      const g = b.body.parent!;
+      const want = b.id === hoverId && !walk.active ? 0.12 : 0;
+      g.position.y += (want - g.position.y) * Math.min(1, dt * 12);
+    });
+
+    if (walk.active) {
+      walk.t += dt / STEP;
+      while (walk.t >= 1 && walk.seg < walk.cells.length - 1) {
+        walk.t -= 1;
+        walk.seg += 1;
+      }
+      if (walk.seg >= walk.cells.length - 1) {
+        // arrived
+        const end = walk.cells[walk.cells.length - 1];
+        token.position.set(end.x, 0, end.z);
+        walk.active = false;
+        const toId = walk.target!;
+        curIndex = ringIndexOf(toId);
+        deps.dispatch({ type: "MOVE", to: toId });
+        deps.onEnter()(toId);
+      } else {
+        const a = walk.cells[walk.seg];
+        const b = walk.cells[walk.seg + 1];
+        token.position.x = a.x + (b.x - a.x) * walk.t;
+        token.position.z = a.z + (b.z - a.z) * walk.t;
+        token.position.y = Math.sin(walk.t * Math.PI) * 0.45; // hop arc
+      }
+    } else {
+      token.position.y += (0 - token.position.y) * Math.min(1, dt * 10);
+    }
+    // gentle idle bob of the pawn head handled by scale? keep static.
+    ring.rotation.z = time; // subtle spin
+
+    renderer.render(scene, camera);
+    raf = requestAnimationFrame(tick);
+  };
+  tick();
+
+  return {
+    dispose() {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      renderer.domElement.removeEventListener("pointermove", onMove);
+      renderer.domElement.removeEventListener("pointerdown", onClick);
+      renderer.dispose();
+      scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = (m as any).material;
+        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+        else if (mat) mat.dispose();
+      });
+      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+    },
+    sync,
+  };
+}
 
 export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void }) {
   const { state, dispatch } = useGame();
-  const [walking, setWalking] = useState(false);
-  const [arrived, setArrived] = useState(false);
-  const [walkCell, setWalkCell] = useState<{ x: number; y: number } | null>(null);
-  const [hovered, setHovered] = useState<LocationId | null>(null);
-  const timers = useRef<number[]>([]);
-  const job = state.jobId ? getJob(state.jobId) : null;
-  const hasCar = state.ownedItems.includes("car");
+  const mountRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<Api | null>(null);
+  const stateRef = useRef(state);
+  const onEnterRef = useRef(onEnter);
+  stateRef.current = state;
+  onEnterRef.current = onEnter;
 
-  const clearTimers = () => {
-    timers.current.forEach((t) => window.clearTimeout(t));
-    timers.current = [];
-  };
-  useEffect(() => () => clearTimers(), []);
-
-  function go(id: LocationId) {
-    if (walking) return;
-    if (id === state.location) {
-      onEnter(id);
-      return;
-    }
-    if (travelCost(state, id) > state.hours) {
-      dispatch({ type: "MOVE", to: id }); // engine logs "not enough hours"
-      return;
-    }
-    const path = ringPath(state.location, id);
-    if (path.length === 0) {
-      dispatch({ type: "MOVE", to: id });
-      onEnter(id);
-      return;
-    }
-    setHovered(null);
-    setWalking(true);
-    // hop through each space in turn
-    path.forEach((cell, i) => {
-      timers.current.push(window.setTimeout(() => setWalkCell(cell), i * STEP_MS));
+  useEffect(() => {
+    if (!mountRef.current) return;
+    const api = initScene(mountRef.current, {
+      dispatch,
+      onEnter: () => onEnterRef.current,
+      getState: () => stateRef.current,
     });
-    // arrive
-    timers.current.push(
-      window.setTimeout(() => {
-        setWalking(false);
-        setArrived(true);
-        setWalkCell(null);
-        dispatch({ type: "MOVE", to: id });
-        timers.current.push(window.setTimeout(() => setArrived(false), 320));
-        timers.current.push(window.setTimeout(() => onEnter(id), 180));
-      }, path.length * STEP_MS)
-    );
-  }
+    apiRef.current = api;
+    return () => api.dispose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ground tiles: path under buildings, grass elsewhere
-  const buildingCells = new Set(LOCATIONS.map((l) => `${l.x},${l.y}`));
-  const tiles: JSX.Element[] = [];
-  for (let gx = 0; gx < 5; gx++) {
-    for (let gy = 0; gy < 4; gy++) {
-      const { x, y } = iso(gx, gy);
-      const isPath = buildingCells.has(`${gx},${gy}`);
-      tiles.push(
-        <polygon
-          key={`t${gx}-${gy}`}
-          points={diamond(x, y, A, B)}
-          fill={isPath ? "#e4d3a7" : gx % 2 === gy % 2 ? "#79c154" : "#72bb4d"}
-          stroke="rgba(0,0,0,0.06)"
-          strokeWidth={1}
-        />
-      );
-    }
-  }
-
-  // island outline corners
-  const A0 = iso(0, 0),
-    B0 = iso(4, 0),
-    C0 = iso(4, 3),
-    D0 = iso(0, 3);
-  const top = `${A0.x},${A0.y - B}`;
-  const right = `${B0.x + A},${B0.y}`;
-  const bottom = `${C0.x},${C0.y + B}`;
-  const left = `${D0.x - A},${D0.y}`;
-
-  // depth-sorted props (trees, fountain, buildings)
-  type Prop = { key: string; sum: number; gx: number; el: JSX.Element };
-  const props: Prop[] = [];
-  const trees: [number, number, number][] = [
-    [0, 1, 1.05], // park
-    [1, 1, 0.8],
-    [3, 1, 0.85],
-    [1, 2, 0.8],
-    [3, 2, 0.9],
-  ];
-  trees.forEach(([gx, gy, s], i) =>
-    props.push({ key: "tr" + i, sum: gx + gy, gx, el: <IsoTree gx={gx} gy={gy} scale={s} /> })
-  );
-  props.push({ key: "fountain", sum: 3.5, gx: 2, el: <Fountain gx={2} gy={1.5} /> });
-  LOCATIONS.forEach((loc) =>
-    props.push({
-      key: loc.id,
-      sum: loc.x + loc.y,
-      gx: loc.x,
-      el: (
-        <IsoBuilding
-          loc={loc}
-          here={loc.id === state.location}
-          onClick={() => go(loc.id)}
-          onHover={(enter) => !walking && setHovered(enter ? loc.id : null)}
-        />
-      ),
-    })
-  );
-  props.sort((a, b) => a.sum - b.sum || a.gx - b.gx);
-
-  const cur = walkCell ?? getLoc(state.location);
-  const tokenPos = iso(cur.x, cur.y);
-
-  // route preview: tiles the character would hop to a hovered destination
-  const routeCells =
-    !walking && hovered && hovered !== state.location ? ringPath(state.location, hovered) : [];
+  // react to external location changes (week rollover sends you home)
+  useEffect(() => {
+    apiRef.current?.sync(state.location);
+  }, [state.location, state.jobId]);
 
   return (
     <div className="card stage board-card">
       <div className="map-head">
         <div>
           <h2>Fast Lane City</h2>
-          <p>Pick a spot — your character strolls over, then you head inside.</p>
+          <p>Pick a spot — your token travels the board, then you head inside.</p>
         </div>
         <span className="tag">{state.hours}h left</span>
       </div>
 
-      <div className="board">
-        <svg
-          className={"iso-scene" + (walking ? " walking" : "")}
-          viewBox={`0 0 ${SCENE_W} ${SCENE_H}`}
-          width="100%"
-          role="img"
-          aria-label="Isometric city map"
-        >
-          <defs>
-            <linearGradient id="islandSide" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#8a6b43" />
-              <stop offset="1" stopColor="#6b5132" />
-            </linearGradient>
-            <radialGradient id="sceneGlow" cx="0.5" cy="0.32" r="0.75">
-              <stop offset="0" stopColor="#ffffff" stopOpacity="0.25" />
-              <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="glossR" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#ffffff" stopOpacity="0.22" />
-              <stop offset="0.65" stopColor="#ffffff" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="glossL" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#ffffff" stopOpacity="0.1" />
-              <stop offset="0.65" stopColor="#ffffff" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-
-          {/* big soft ground shadow */}
-          <ellipse cx={SCENE_W / 2 + 10} cy={SCENE_H - 70} rx={360} ry={58} fill="rgba(20,30,15,0.28)" />
-
-          {/* island sides (extrusion) */}
-          <polygon points={`${right} ${bottom} ${bottom.split(",")[0]},${C0.y + B + DEPTH} ${B0.x + A},${B0.y + DEPTH}`} fill="url(#islandSide)" />
-          <polygon points={`${bottom} ${left} ${D0.x - A},${D0.y + DEPTH} ${C0.x},${C0.y + B + DEPTH}`} fill="url(#islandSide)" />
-
-          {/* ground surface */}
-          <polygon points={`${top} ${right} ${bottom} ${left}`} fill="#79c154" />
-          {tiles}
-          {/* subtle top light */}
-          <polygon points={`${top} ${right} ${bottom} ${left}`} fill="url(#sceneGlow)" pointerEvents="none" />
-
-          {props.map((p) => (
-            <g key={p.key}>{p.el}</g>
-          ))}
-
-          {/* route preview: glowing footsteps toward the hovered destination */}
-          {routeCells.length > 0 && (
-            <g style={{ pointerEvents: "none" }}>
-              {routeCells.map((cell, i) => {
-                const pos = iso(cell.x, cell.y);
-                const c = iso(2, 1.5);
-                const dx = c.x - pos.x;
-                const dy = c.y - pos.y;
-                const len = Math.hypot(dx, dy) || 1;
-                const mx = pos.x + (dx / len) * 26;
-                const my = pos.y + (dy / len) * 26;
-                const last = i === routeCells.length - 1;
-                return (
-                  <g key={"rt" + i} transform={`translate(${mx} ${my})`} className="route-dot">
-                    <polygon
-                      points={diamond(0, 0, last ? 13 : 7, last ? 7 : 3.5)}
-                      fill={last ? "rgba(236,211,140,0.85)" : "rgba(236,211,140,0.55)"}
-                      stroke={last ? "#ecd38c" : "none"}
-                      strokeWidth={last ? 1.5 : 0}
-                    />
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* name signs: a top layer so buildings never cover them */}
-          <g style={{ pointerEvents: "none" }}>
-            {[...LOCATIONS]
-              .sort((a, b) => a.x + a.y - (b.x + b.y))
-              .map((loc) => (
-                <IsoSign key={"sign" + loc.id} loc={loc} hasJob={job?.locationId === loc.id} />
-              ))}
-          </g>
-
-          {/* character token: a dynasty-pin with the player's portrait */}
-          <g
-            className={"iso-token" + (walking ? " walking" : "") + (arrived ? " arrived" : "")}
-            style={{
-              transform: `translate(${tokenPos.x}px, ${tokenPos.y}px)`,
-              transition: walking ? `transform ${STEP_MS}ms linear` : "transform 0.28s ease",
-            }}
-          >
-            <ellipse cx={0} cy={2} rx={13} ry={5} fill="rgba(0,0,0,0.3)" />
-            <g className="iso-token-bob">
-              <path d="M 0,-44 C 13,-44 17,-29 0,-14 C -17,-29 -13,-44 0,-44 Z" fill="#c9a24b" stroke="#2a1f08" strokeWidth="1.5" />
-              <circle cx={0} cy={-34} r={10.5} fill="#15110b" />
-              {hasCar ? (
-                <g transform="translate(-9 -43)" color="#ecd38c">
-                  <Icon name="car" size={18} />
-                </g>
-              ) : (
-                <g transform="translate(-9.5 -43.5)">
-                  <Portrait id={state.avatar} size={19} />
-                </g>
-              )}
-            </g>
-          </g>
-        </svg>
-
+      <div className="board board-3d">
+        <div ref={mountRef} className="board-canvas" />
         <div className="clock-plate">
           <Clock hours={state.hours} total={state.hoursPerWeek} size={58} />
           <div className="clock-meta">
             <span className="wp-week">Week {state.week}</span>
-            <span className="wp-hours">{state.hours}h of {state.hoursPerWeek}h left</span>
+            <span className="wp-hours">
+              {state.hours}h of {state.hoursPerWeek}h left
+            </span>
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-function getLoc(id: LocationId) {
-  return LOCATIONS.find((l) => l.id === id)!;
 }

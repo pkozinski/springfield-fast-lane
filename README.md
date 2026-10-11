@@ -28,12 +28,11 @@ A **Crusader Kings III-inspired** interface wrapped around an **isometric 2.5D r
   serif titles over EB Garamond body, a dynasty-style **circular portrait** for your character
   (pick your face on the intro, like choosing a ruler), gilded stat bars, and gold-embossed
   buttons, over a warm gold-on-dark palette.
-- **The map** — a single SVG isometric diorama sat on a candle-lit tabletop: a tiled island with
-  walkways, custom low-poly buildings (sun-shaded faces, parapet roofs, windows, doors) with
-  distinctive features per business — factory smokestacks, bank columns, a university clock
-  tower, golden arches, a cinema marquee, a disco ball — plus trees, a fountain, and a map-pin
-  character that walks between tiles. Clicking a building walks there, then the location opens as
-  a centred, framed panel.
+- **The map** — a real **Three.js 3D board** on a candle-lit tabletop: a lit, shadowed island of
+  procedurally-built low-poly buildings, each with distinctive massing and features (a clock
+  tower, columns, smokestacks, an arch, a disco ball), plus trees, a fountain, and a glossy gold
+  game-piece token. Click a building and the token **hops space-by-space along the board**
+  (shortest way round, arcing jumps), then the location opens as a centred, framed panel.
 - **No emoji** — the character is an engraved **cameo portrait** (pick one on the intro like
   choosing a ruler) and every stat/location/item uses a custom gold **SVG icon** set.
 - **The clock** — an analog week-clock (in the HUD and on the board, à la the original) whose hand
