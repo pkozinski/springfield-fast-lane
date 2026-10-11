@@ -22,11 +22,12 @@ Hit all four before time runs out and you win.
 
 ## Look & feel
 
-A clean, modern dark UI over the classic board layout: the city's locations ring the edges of
-the board around a hollow centre, connected by a loop path, and clicking one walks an animated
-character token there before the location opens as a centred panel — faithful to the original's
-flow, modern in style (soft surfaces, rounded cards, smooth motion, Inter type). Your token
-becomes a car once you buy one.
+An **isometric 2.5D diorama**, rendered as a single SVG scene: a floating island with tiled
+grounds and walkways, custom low-poly buildings (two sun-shaded wall faces, parapet roofs,
+windows, doors, rooftop units) each in its own colour, iso trees and a fountain, and a polished
+map-pin character. Clicking a building walks the character across the island, then the location
+opens as a centred panel. Clean modern chrome around it (frosted HUD + sidebar, Inter type).
+Pick your face on the intro; it rides the board and becomes a car once you buy one.
 
 ## Modernized under the hood
 

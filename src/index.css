@@ -214,27 +214,80 @@ h4 {
   font-size: 13px;
 }
 
-/* ---- the board: a bright, illustrated town ------------------------------ */
+/* ---- the board: an isometric diorama ------------------------------------ */
 .board-stage {
   position: relative;
 }
 .board {
   position: relative;
   width: 100%;
-  aspect-ratio: var(--cols) / var(--rows);
+  aspect-ratio: auto;
   border-radius: var(--radius);
   overflow: hidden;
-  /* sky fading down into sunny grass */
-  background: linear-gradient(
-    180deg,
-    #8fd3f4 0%,
-    #a7e0f0 16%,
-    #bfe59a 26%,
-    #8dcc66 42%,
-    #74bd50 100%
-  );
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  box-shadow: inset 0 2px 10px rgba(255, 255, 255, 0.35), inset 0 -30px 60px rgba(0, 60, 0, 0.12);
+  /* soft studio backdrop behind the floating island */
+  background: radial-gradient(120% 95% at 50% 8%, #f3f7fc 0%, #dce8f3 48%, #c3d6e8 100%);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 2px 20px rgba(255, 255, 255, 0.5), var(--shadow-sm);
+}
+
+/* ---- isometric scene ---------------------------------------------------- */
+.iso-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.iso-sign-text {
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 12px;
+  fill: #1b2434;
+  letter-spacing: 0.01em;
+}
+.iso-job-text {
+  font-size: 13px;
+  fill: #3a2a00;
+  font-weight: 800;
+}
+.iso-bld {
+  cursor: pointer;
+}
+.iso-scene.walking .iso-bld {
+  cursor: default;
+  pointer-events: none;
+}
+.iso-bld-body {
+  transition: transform 0.15s ease;
+}
+.iso-bld:hover .iso-bld-body {
+  transform: translateY(-7px);
+}
+.iso-bld:active .iso-bld-body {
+  transform: translateY(-2px);
+}
+.here-ring {
+  animation: herepulse 1.5s ease-in-out infinite;
+}
+@keyframes herepulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.iso-token {
+  transition: transform 0.75s cubic-bezier(0.37, 0, 0.26, 1);
+}
+.iso-token-face {
+  font-size: 15px;
+}
+.iso-token.walking .iso-token-bob {
+  animation: tokbob 0.4s ease-in-out infinite;
+}
+@keyframes tokbob {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.iso-tree {
+  pointer-events: none;
 }
 /* drifting clouds over the top band */
 .board .sky {
