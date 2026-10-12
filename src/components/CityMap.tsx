@@ -193,6 +193,18 @@ function kit(g: THREE.Group) {
     m.scale.set(w, h, d);
     return m;
   };
+  /** Triangular gable roof: `span` across the slope, `len` along the ridge. */
+  const gable = (span: number, len: number, h: number, x: number, y: number, z: number, mat: THREE.Material, ridgeAlongX = true) => {
+    const sh = new THREE.Shape();
+    sh.moveTo(-span / 2, 0);
+    sh.lineTo(span / 2, 0);
+    sh.lineTo(0, h);
+    sh.closePath();
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false });
+    geo.translate(0, 0, -len / 2);
+    if (ridgeAlongX) geo.rotateY(Math.PI / 2);
+    return mesh(geo, mat, x, y, z);
+  };
   /** A truncated, sloped fascia (mansard band). */
   const mansard = (w: number, d: number, h: number, x: number, y: number, z: number, mat: THREE.Material, taper = 0.82) => {
     const geo = new THREE.CylinderGeometry(Math.SQRT1_2 * taper, Math.SQRT1_2, 1, 4, 1);
@@ -241,14 +253,14 @@ function kit(g: THREE.Group) {
     g.add(p);
     return p;
   };
-  return { mesh, box, cyl, ball, hipRoof, mansard, win, winSide, sign, person };
+  return { mesh, box, cyl, ball, hipRoof, gable, mansard, win, winSide, sign, person };
 }
 
 /* ---- the landmarks --------------------------------------------------------- */
 function buildBuilding(loc: Location) {
   const g = new THREE.Group();
   g.userData.locId = loc.id;
-  const { mesh, box, cyl, ball, hipRoof, mansard, win, winSide, sign, person } = kit(g);
+  const { mesh, box, cyl, ball, hipRoof, gable, mansard, win, winSide, sign, person } = kit(g);
 
   // common palette
   const white = toon("#fbfaf4");
@@ -268,40 +280,56 @@ function buildBuilding(loc: Location) {
   switch (loc.id) {
     /* -------- 742 Evergreen Terrace -------- */
     case "home": {
-      const wall = toon("#f0a07c");
-      const roof = toon("#9a4f33");
-      const brick = toon("#b5533c");
+      /* 742 Evergreen Terrace: salmon two-storey with a cross gable, porch pediment and side garage */
+      const wall = toon("#f3a47f");
+      const roof = toon("#8a4636");
+      const trim = toon("#fbfaf4");
+      const brick = toon("#a9483a");
       const door = toon("#8a5a34");
-      const hx = 0.2;
-      const w = 1.05, h = 1.02, d = 0.88;
-      body = box(w, h, d, hx, h / 2, 0, wall);
-      hipRoof(w + 0.16, d + 0.16, 0.52, hx, h, 0, roof);
-      box(0.15, 0.5, 0.15, hx + 0.32, h + 0.3, -0.16, brick);
-      // ground floor: door + porch roof + steps, windows either side
-      box(0.24, 0.42, 0.04, hx, 0.21, d / 2 + 0.01, door);
-      ball(0.018, hx + 0.07, 0.21, d / 2 + 0.04, toon("#f2c14e"), 8);
-      box(0.44, 0.04, 0.2, hx, 0.47, d / 2 + 0.09, roof);
-      box(0.38, 0.05, 0.14, hx, 0.025, d / 2 + 0.08, concrete);
-      for (const wx of [-0.27, 0.27]) win(0.2, 0.22, hx + wx, 0.3, d / 2, frame, glass);
-      for (const wx of [-0.3, 0, 0.3]) win(0.18, 0.2, hx + wx, 0.76, d / 2, frame, glass);
-      winSide(0.2, 0.2, hx + w / 2, 0.76, 0.05, frame, glass);
-      winSide(0.2, 0.2, hx + w / 2, 0.3, 0.05, frame, glass);
-      // attached garage
+      const hx = 0.24;
+      const w = 0.98, h = 1.0, d = 0.84;
+      body = box(w, h, d, hx, h / 2, 0, wall, 0.03);
+      box(w + 0.02, 0.06, d + 0.02, hx, 0.03, 0, trim, 0.01);
+      box(w + 0.04, 0.04, d + 0.04, hx, h / 2, 0, trim, 0.01);
+      gable(d + 0.2, w + 0.16, 0.44, hx, h, 0, roof);
+      // front-facing two-storey gable wing on the right
+      const fx = hx + 0.25;
+      box(0.44, h, 0.22, fx, h / 2, d / 2 + 0.1, wall, 0.02);
+      gable(0.56, 0.3, 0.36, fx, h, d / 2 + 0.08, roof, false);
+      box(0.12, 0.12, 0.03, fx, h + 0.13, d / 2 + 0.22, glass, 0.06);
+      win(0.3, 0.26, fx, 0.32, d / 2 + 0.21, frame, glass);
+      box(0.02, 0.26, 0.04, fx, 0.32, d / 2 + 0.24, trim, 0.004);
+      win(0.22, 0.22, fx, 0.76, d / 2 + 0.21, frame, glass);
+      // door under a little pediment on two posts
+      const dx = hx - 0.22;
+      box(0.2, 0.4, 0.04, dx, 0.2, d / 2 + 0.01, door, 0.02);
+      ball(0.016, dx + 0.06, 0.2, d / 2 + 0.04, toon("#f2c14e"), 8);
+      gable(0.36, 0.24, 0.14, dx, 0.47, d / 2 + 0.1, roof, false);
+      box(0.38, 0.04, 0.26, dx, 0.46, d / 2 + 0.1, trim, 0.01);
+      for (const px of [-0.15, 0.15]) cyl(0.015, 0.015, 0.44, dx + px, 0.22, d / 2 + 0.21, trim, 6);
+      box(0.34, 0.04, 0.26, dx, 0.02, d / 2 + 0.12, concrete, 0.01);
+      win(0.2, 0.2, dx, 0.76, d / 2, frame, glass);
+      winSide(0.22, 0.22, hx + w / 2, 0.76, -0.12, frame, glass);
+      winSide(0.22, 0.22, hx + w / 2, 0.3, -0.12, frame, glass);
+      // tall brick chimney on the right gable end
+      box(0.14, 0.2, 0.18, hx + w / 2 + 0.04, h - 0.1, -0.15, brick, 0.02);
+      box(0.13, 0.75, 0.15, hx + w / 2 - 0.08, h + 0.2, -0.15, brick, 0.02);
+      // attached garage with its own gable, panelled door, driveway
       const gx = -0.6;
-      box(0.62, 0.56, 0.84, gx, 0.28, 0.02, wall);
-      hipRoof(0.74, 0.96, 0.28, gx, 0.56, 0.02, roof);
-      box(0.48, 0.4, 0.04, gx, 0.2, 0.45, white);
-      for (let i = 1; i <= 3; i++) box(0.46, 0.012, 0.02, gx, 0.04 + i * 0.1, 0.475, toon("#d8d0bf"), 0.004);
-      // driveway, hedge, mailbox
-      box(0.5, 0.025, 0.42, gx, 0.012, 0.66, concrete, 0.01);
-      box(0.32, 0.14, 0.12, hx + 0.36, 0.07, d / 2 + 0.22, toon("#4f9a3c"));
-      cyl(0.012, 0.012, 0.2, hx - 0.38, 0.1, d / 2 + 0.3, ink, 6);
-      box(0.08, 0.06, 0.1, hx - 0.38, 0.22, d / 2 + 0.3, toon("#4a7bd0"), 0.02);
-      topY = h + 0.62;
-      halfW = 0.75;
+      box(0.62, 0.56, 0.8, gx, 0.28, 0.02, wall, 0.03);
+      gable(0.94, 0.72, 0.26, gx, 0.56, 0.02, roof);
+      box(0.48, 0.42, 0.04, gx, 0.21, 0.43, trim, 0.02);
+      for (let i = 1; i <= 3; i++) box(0.46, 0.012, 0.02, gx, 0.03 + i * 0.1, 0.455, toon("#d8d0bf"), 0.004);
+      box(0.52, 0.025, 0.42, gx, 0.012, 0.64, concrete, 0.01);
+      // front walk, hedges, mailbox
+      box(0.14, 0.02, 0.3, dx, 0.01, d / 2 + 0.38, concrete, 0.005);
+      box(0.3, 0.14, 0.12, fx + 0.02, 0.07, d / 2 + 0.36, toon("#4f9a3c"));
+      cyl(0.012, 0.012, 0.2, dx + 0.3, 0.1, d / 2 + 0.48, ink, 6);
+      box(0.08, 0.06, 0.1, dx + 0.3, 0.22, d / 2 + 0.48, toon("#4a7bd0"), 0.02);
+      topY = h + 0.7;
+      halfW = 0.78;
       break;
     }
-
     /* -------- Springfield Employment Office -------- */
     case "employment": {
       const wall = toon("#ecdcae");
@@ -405,42 +433,43 @@ function buildBuilding(loc: Location) {
 
     /* -------- Krusty Burger -------- */
     case "krusty": {
+      /* Krusty Burger: red walls, yellow mansard roof, the clown's head on a tall pole */
       const red = toon("#e0352b");
       const yellow = toon("#fed90f");
-      const w = 1.2, h = 0.74, d = 1.0;
-      body = box(w, h, d, 0, h / 2, 0, white);
-      box(w + 0.03, 0.15, d + 0.03, 0, 0.075, 0, red);
-      box(w + 0.1, 0.2, d + 0.1, 0, h + 0.08, 0, red);
-      box(w - 0.04, 0.05, d - 0.04, 0, h + 0.2, 0, roofGrey);
-      sign("KRUSTY BURGER", 1.1, 0.15, 0, h + 0.08, d / 2 + 0.056, { fg: "#fed90f", stroke: INK });
-      // big front windows + glass door
-      box(0.66, 0.34, 0.04, -0.16, 0.42, d / 2 + 0.01, glass, 0.02);
-      for (const mx of [-0.38, -0.16, 0.06]) box(0.025, 0.34, 0.05, mx, 0.42, d / 2 + 0.02, white, 0.006);
-      box(0.22, 0.44, 0.04, 0.38, 0.22, d / 2 + 0.01, darkGlass, 0.02);
-      winSide(0.5, 0.3, w / 2, 0.42, 0, white, glass);
+      const w = 1.12, h = 0.66, d = 0.96;
+      body = box(w, h, d, 0.08, h / 2, 0, red);
+      box(w + 0.03, 0.12, d + 0.03, 0.08, 0.06, 0, white);
+      mansard(w + 0.2, d + 0.2, 0.3, 0.08, h - 0.02, 0, yellow, 0.84);
+      box(w - 0.04, 0.05, d - 0.04, 0.08, h + 0.29, 0, roofGrey);
+      const sgn = sign("KRUSTY BURGER", 1.0, 0.17, 0.08, h + 0.13, d / 2 + 0.07, { fg: "#e0352b", stroke: "#fffdf3" });
+      sgn.rotation.x = -0.32;
+      // big windows + glass door
+      box(0.6, 0.32, 0.04, -0.08, 0.36, d / 2 + 0.01, glass, 0.02);
+      for (const mx of [-0.28, -0.08, 0.12]) box(0.025, 0.32, 0.05, mx, 0.36, d / 2 + 0.02, white, 0.006);
+      box(0.22, 0.44, 0.04, 0.44, 0.22, d / 2 + 0.01, darkGlass, 0.02);
+      winSide(0.5, 0.28, 0.08 + w / 2, 0.36, 0, white, glass);
       // drive-thru menu board
-      cyl(0.015, 0.015, 0.3, w / 2 + 0.16, 0.15, 0.25, metal, 6);
-      box(0.06, 0.18, 0.24, w / 2 + 0.16, 0.36, 0.25, red, 0.02);
-      // pole sign with the clown's head
-      const px = -0.56, pz = 0.4;
-      cyl(0.035, 0.04, 1.25, px, 0.62, pz, metal, 10);
-      const headY = 1.45;
-      ball(0.25, px, headY, pz, white, 24);
-      ball(0.065, px, headY - 0.01, pz + 0.25, red, 12);
+      cyl(0.015, 0.015, 0.3, w / 2 + 0.24, 0.15, 0.3, metal, 6);
+      box(0.06, 0.18, 0.24, w / 2 + 0.24, 0.36, 0.3, yellow, 0.02);
+      // tall pole sign with the giant clown head
+      const px = -0.62, pz = 0.36;
+      cyl(0.04, 0.05, 1.3, px, 0.65, pz, toon("#d9d9d9"), 10);
+      const headY = 1.5;
+      ball(0.27, px, headY, pz, white, 24);
+      ball(0.07, px, headY - 0.02, pz + 0.27, red, 12);
       for (const sx of [-1, 1]) {
-        ball(0.075, px + sx * 0.09, headY + 0.08, pz + 0.19, white, 12);
-        ball(0.03, px + sx * 0.085, headY + 0.08, pz + 0.26, ink, 8);
-        ball(0.12, px + sx * 0.25, headY + 0.04, pz - 0.02, toon("#4fae4a"), 12);
-        ball(0.085, px + sx * 0.2, headY + 0.17, pz - 0.04, toon("#4fae4a"), 10);
+        ball(0.08, px + sx * 0.1, headY + 0.08, pz + 0.2, white, 12);
+        ball(0.032, px + sx * 0.095, headY + 0.08, pz + 0.28, toon("#3d8fe0"), 8);
+        ball(0.14, px + sx * 0.27, headY + 0.03, pz - 0.02, toon("#4fae4a"), 12);
+        ball(0.1, px + sx * 0.21, headY + 0.18, pz - 0.05, toon("#4fae4a"), 10);
       }
-      const smile = mesh(new THREE.TorusGeometry(0.11, 0.028, 8, 18, Math.PI), red, px, headY - 0.09, pz + 0.2);
+      const smile = mesh(new THREE.TorusGeometry(0.12, 0.03, 8, 18, Math.PI), red, px, headY - 0.1, pz + 0.21);
       smile.rotation.set(0.35, 0, Math.PI);
-      box(0.2, 0.08, 0.16, px, headY + 0.27, pz, yellow, 0.03);
-      topY = headY + 0.4;
-      halfW = w / 2;
+      ball(0.09, px, headY + 0.27, pz, toon("#7fd3f7"), 12).scale.set(1.2, 0.5, 1.2);
+      topY = headY + 0.38;
+      halfW = 0.6;
       break;
     }
-
     /* -------- Try-N-Save -------- */
     case "trynsave": {
       const wall = toon("#e2e7ee");
@@ -544,34 +573,35 @@ function buildBuilding(loc: Location) {
 
     /* -------- Moe's Tavern -------- */
     case "moes": {
-      const brick = toon("#a65a3c");
+      /* Moe's Tavern: plain brick front, one door, a frosted Duff window, the red neon sign */
+      const brick = toon("#a85a3b");
       const trim = toon("#5a2e1e");
-      const w = 1.02, h = 0.78, d = 0.92;
-      body = box(w, h, d, 0, h / 2, 0, brick);
-      box(w + 0.02, 0.1, d + 0.02, 0, 0.05, 0, trim);
-      box(w + 0.06, 0.1, d + 0.06, 0, h + 0.05, 0, trim);
-      winSide(0.16, 0.16, w / 2, 0.45, -0.15, trim, toon("#e9dca0", { emissive: "#c9a64a", emissiveIntensity: 0.4 }));
-      // the door + tiny frosted window
-      box(0.24, 0.44, 0.04, -0.12, 0.22, d / 2 + 0.01, toon("#2f5d3a"), 0.02);
-      ball(0.018, -0.04, 0.22, d / 2 + 0.04, toon("#f2c14e"), 8);
-      box(0.22, 0.16, 0.04, 0.26, 0.4, d / 2 + 0.01, toon("#e9dca0", { emissive: "#c9a64a", emissiveIntensity: 0.4 }), 0.015);
-      box(0.13, 0.13, 0.02, 0.26, 0.4, d / 2 + 0.035, white, 0.06);
-      sign("DUFF", 0.12, 0.06, 0.26, 0.4, d / 2 + 0.047, { fg: "#e0352b" });
-      // neon sign over the door
-      box(0.62, 0.17, 0.05, 0, 0.6, d / 2 + 0.02, toon("#2a1a12"), 0.02);
-      sign("MOE'S", 0.56, 0.14, 0, 0.6, d / 2 + 0.05, { fg: "#ff5a5a", stroke: "#ffe3e3" });
-      // rooftop sign on posts
-      for (const sx of [-0.25, 0.25]) cyl(0.015, 0.015, 0.3, sx, h + 0.24, -0.05, metal, 6);
-      box(0.72, 0.24, 0.05, 0, h + 0.46, -0.05, toon("#2a1a12"), 0.02);
-      sign("MOE'S TAVERN", 0.66, 0.18, 0, h + 0.46, -0.02, { fg: "#ff7a3a", stroke: "#3a1408" });
-      // trash cans by the side
+      const w = 0.98, h = 0.78, d = 0.9;
+      body = box(w, h, d, 0, h / 2, 0, brick, 0.03);
+      box(w + 0.02, 0.1, d + 0.02, 0, 0.05, 0, trim, 0.02);
+      box(w + 0.06, 0.09, d + 0.06, 0, h + 0.045, 0, trim, 0.02);
+      // door with its little porthole
+      box(0.24, 0.46, 0.04, -0.16, 0.23, d / 2 + 0.01, toon("#3b2a22"), 0.02);
+      const port = mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 14), glass, -0.16, 0.34, d / 2 + 0.035);
+      port.rotation.x = Math.PI / 2;
+      box(0.06, 0.03, 0.03, -0.08, 0.36, d / 2 + 0.01, trim, 0.008);
+      // frosted window with a round Duff sign
+      box(0.26, 0.2, 0.04, 0.24, 0.38, d / 2 + 0.01, toon("#e9dca0", { emissive: "#c9a64a", emissiveIntensity: 0.4 }), 0.015);
+      const duff = mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 18), white, 0.24, 0.38, d / 2 + 0.04);
+      duff.rotation.x = Math.PI / 2;
+      sign("DUFF", 0.12, 0.06, 0.24, 0.38, d / 2 + 0.052, { fg: "#e0352b" });
+      // the big neon "MOE'S" on a dark board over the door
+      box(0.74, 0.22, 0.05, 0, 0.64, d / 2 + 0.03, toon("#26160f"), 0.02);
+      sign("MOE'S", 0.68, 0.19, 0, 0.64, d / 2 + 0.06, { fg: "#ff4f4f", stroke: "#ffd6d6" });
+      for (const sx of [-0.33, 0.33]) box(0.02, 0.12, 0.08, sx, 0.52, d / 2 + 0.06, metal, 0.005);
+      winSide(0.18, 0.16, w / 2, 0.45, -0.15, trim, toon("#e9dca0", { emissive: "#c9a64a", emissiveIntensity: 0.4 }));
+      // trash cans in the alley
       cyl(0.07, 0.065, 0.16, w / 2 + 0.12, 0.08, 0.25, metal, 12);
       cyl(0.075, 0.075, 0.02, w / 2 + 0.12, 0.17, 0.25, metal, 12);
-      topY = h + 0.6;
+      topY = h + 0.2;
       halfW = w / 2;
       break;
     }
-
     /* -------- Bowl-A-Rama -------- */
     case "bowlarama": {
       const wall = toon("#f6b3d1");
@@ -632,61 +662,66 @@ function buildBuilding(loc: Location) {
       sign("ICE", 0.18, 0.08, -0.38, 0.12, d / 2 + 0.215, { fg: "#2f6fd6" });
       cyl(0.07, 0.07, 0.18, 0.2, 0.09, d / 2 + 0.16, toon("#e0352b"), 12);
       ball(0.075, 0.2, 0.2, d / 2 + 0.16, toon("#7fd3f7"), 12);
-      topY = h + 0.55;
+      // pole sign + payphone
+      cyl(0.03, 0.035, 1.05, w / 2 + 0.1, 0.52, 0.42, metal, 10);
+      box(0.5, 0.26, 0.08, w / 2 + 0.1, 1.15, 0.42, green, 0.03);
+      sign("KWIK-E-MART", 0.46, 0.2, w / 2 + 0.1, 1.15, 0.465, { bg: "#fffdf3", fg: "#e0352b", border: "#f08a24" });
+      box(0.1, 0.22, 0.08, 0.62, 0.2, d / 2 + 0.05, toon("#3a5f9a"), 0.02);
+      box(0.06, 0.08, 0.02, 0.62, 0.24, d / 2 + 0.095, metal, 0.01);
+      topY = h + 0.62;
       halfW = w / 2;
       break;
     }
 
     /* -------- Lard Lad Donuts -------- */
     case "lardlad": {
+      /* Lard Lad Donuts: a small pink shop dwarfed by the giant donut-hoisting statue */
       const wall = toon("#f7c2d8");
       const pink = toon("#ef5fa7");
-      const w = 0.98, h = 0.7, d = 0.86;
-      const sx0 = -0.22;
+      const w = 0.92, h = 0.6, d = 0.84;
+      const sx0 = -0.3;
       body = box(w, h, d, sx0, h / 2, 0, wall);
       box(w + 0.08, 0.12, d + 0.08, sx0, h + 0.06, 0, pink);
-      sign("LARD LAD DONUTS", 0.94, 0.11, sx0, h + 0.06, d / 2 + 0.042, { fg: "#ffffff", stroke: INK });
-      // striped awning
+      sign("LARD LAD DONUTS", 0.88, 0.1, sx0, h + 0.06, d / 2 + 0.042, { fg: "#ffffff", stroke: INK });
       for (let i = 0; i < 6; i++) {
-        const s = box(0.16, 0.035, 0.22, sx0 - 0.4 + i * 0.16, 0.52, d / 2 + 0.1, i % 2 ? white : pink, 0.01);
-        s.rotation.x = 0.35;
+        const s2 = box(0.15, 0.035, 0.2, sx0 - 0.375 + i * 0.15, 0.44, d / 2 + 0.09, i % 2 ? white : pink, 0.01);
+        s2.rotation.x = 0.35;
       }
-      box(0.46, 0.3, 0.04, sx0 - 0.15, 0.3, d / 2 + 0.01, glass, 0.02);
-      box(0.2, 0.42, 0.04, sx0 + 0.3, 0.21, d / 2 + 0.01, darkGlass, 0.02);
-      // the statue: a giant donut held high
-      const lx = 0.5, lz = 0.2;
-      box(0.32, 0.12, 0.3, lx, 0.06, lz, concrete, 0.02);
+      box(0.42, 0.24, 0.04, sx0 - 0.15, 0.26, d / 2 + 0.01, glass, 0.02);
+      box(0.18, 0.38, 0.04, sx0 + 0.28, 0.19, d / 2 + 0.01, darkGlass, 0.02);
+      // the statue, built at unit scale then blown up to tower over the shop
+      const st = new THREE.Group();
+      g.add(st);
+      const K = kit(st);
       const overalls = toon("#e04646");
       const shirt = toon("#fbfaf4");
-      for (const s of [-0.05, 0.05]) cyl(0.04, 0.045, 0.3, lx + s, 0.27, lz, overalls, 10);
-      box(0.22, 0.26, 0.16, lx, 0.53, lz, overalls, 0.05);
-      box(0.18, 0.1, 0.17, lx, 0.62, lz, shirt, 0.04);
-      mesh(new THREE.CapsuleGeometry(0.09, 0.08, 4, 14), toon(SKIN), lx, 0.8, lz);
-      for (const s of [-1, 1]) {
-        ball(0.04, lx + s * 0.035, 0.82, lz + 0.085, white, 10);
-        ball(0.014, lx + s * 0.035, 0.82, lz + 0.12, ink, 6);
+      K.box(0.3, 0.1, 0.28, 0, 0.05, 0, concrete, 0.02);
+      for (const s2 of [-0.05, 0.05]) K.cyl(0.04, 0.045, 0.3, s2, 0.25, 0, overalls, 10);
+      K.box(0.22, 0.26, 0.16, 0, 0.51, 0, overalls, 0.05);
+      K.box(0.18, 0.1, 0.17, 0, 0.6, 0, shirt, 0.04);
+      K.mesh(new THREE.CapsuleGeometry(0.09, 0.08, 4, 14), toon(SKIN), 0, 0.78, 0);
+      for (const s2 of [-1, 1]) {
+        K.ball(0.04, s2 * 0.035, 0.8, 0.085, white, 10);
+        K.ball(0.014, s2 * 0.035, 0.8, 0.12, ink, 6);
       }
-      const quiff = ball(0.09, lx, 0.92, lz + 0.02, toon("#6b3f1f"), 12);
-      quiff.scale.set(1.1, 0.6, 1.2);
-      const arm = cyl(0.035, 0.035, 0.42, lx + 0.12, 0.84, lz, shirt, 8);
-      arm.rotation.z = -0.3;
-      cyl(0.035, 0.035, 0.24, lx - 0.13, 0.48, lz + 0.04, shirt, 8).rotation.z = 0.25;
-      const dY = 1.15;
-      mesh(new THREE.TorusGeometry(0.17, 0.08, 14, 28), toon("#d9a35c"), lx + 0.2, dY, lz);
-      const icing = mesh(new THREE.TorusGeometry(0.17, 0.07, 14, 28), pink, lx + 0.2, dY, lz + 0.025);
-      icing.scale.set(1, 1, 0.7);
+      K.ball(0.09, 0, 0.9, 0.02, toon("#6b3f1f"), 12).scale.set(1.1, 0.6, 1.2);
+      K.cyl(0.035, 0.035, 0.42, 0.12, 0.82, 0, shirt, 8).rotation.z = -0.3;
+      K.cyl(0.035, 0.035, 0.24, -0.13, 0.46, 0.04, shirt, 8).rotation.z = 0.25;
+      const dY = 1.13;
+      K.mesh(new THREE.TorusGeometry(0.17, 0.08, 14, 28), toon("#d9a35c"), 0.2, dY, 0);
+      K.mesh(new THREE.TorusGeometry(0.17, 0.07, 14, 28), pink, 0.2, dY, 0.025).scale.set(1, 1, 0.7);
       const sprinkleCols = ["#fed90f", "#7cc4f2", "#52b947", "#ffffff", "#e0352b"];
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2;
         const r = 0.17 + (i % 2 ? 0.035 : -0.03);
-        const sp = box(0.035, 0.012, 0.012, lx + 0.2 + Math.cos(a) * r, dY + Math.sin(a) * r, lz + 0.085, toon(sprinkleCols[i % 5]), 0.004);
-        sp.rotation.z = a * 1.7;
+        K.box(0.035, 0.012, 0.012, 0.2 + Math.cos(a) * r, dY + Math.sin(a) * r, 0.085, toon(sprinkleCols[i % 5]), 0.004).rotation.z = a * 1.7;
       }
-      topY = dY + 0.3;
+      st.position.set(0.42, 0, 0.12);
+      st.scale.setScalar(1.45);
+      topY = dY * 1.45 + 0.3;
       halfW = 0.6;
       break;
     }
-
     /* -------- Springfield Nuclear Power Plant -------- */
     case "plant": {
       const tower = toon("#cfccc3", { side: THREE.DoubleSide });
@@ -717,6 +752,14 @@ function buildBuilding(loc: Location) {
         cyl(0.07, 0.07, 0.17, bx, 0.085, bz, toon("#f2c14e"), 12);
         cyl(0.06, 0.06, 0.012, bx, 0.175, bz, goo, 12);
       }
+      const stackX = 0.72, stackZ = -0.35;
+      cyl(0.07, 0.1, 1.5, stackX, 0.75, stackZ, toon("#d9d6cc"), 14);
+      for (const y of [1.2, 1.38]) {
+        const band = mesh(new THREE.TorusGeometry(0.078, 0.025, 6, 16), toon("#e0352b"), stackX, y, stackZ);
+        band.rotation.x = Math.PI / 2;
+      }
+      box(0.2, 0.2, 0.03, 0.14, 0.36, 0.53, toon("#fed90f"), 0.03);
+      sign("\u2622", 0.18, 0.18, 0.14, 0.36, 0.547, { fg: INK });
       const puddle = cyl(0.12, 0.12, 0.008, -0.66, 0.006, 0.6, goo, 16);
       puddle.scale.z = 0.5;
       topY = 1.75;
