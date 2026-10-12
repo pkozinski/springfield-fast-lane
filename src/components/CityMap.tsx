@@ -260,7 +260,7 @@ function kit(g: THREE.Group) {
 function buildBuilding(loc: Location) {
   const g = new THREE.Group();
   g.userData.locId = loc.id;
-  const { mesh, box, cyl, ball, hipRoof, gable, mansard, win, winSide, sign, person } = kit(g);
+  const { mesh, box, cyl, ball, hipRoof, mansard, win, winSide, sign, person } = kit(g);
 
   // common palette
   const white = toon("#fbfaf4");
@@ -280,53 +280,57 @@ function buildBuilding(loc: Location) {
   switch (loc.id) {
     /* -------- 742 Evergreen Terrace -------- */
     case "home": {
-      /* 742 Evergreen Terrace: salmon two-storey with a cross gable, porch pediment and side garage */
-      const wall = toon("#f3a47f");
-      const roof = toon("#8a4636");
+      /* 742 Evergreen Terrace: pink-orange two-storey, arched front door between two
+         ground-floor bay windows, hip roof, attached garage with a wall-coloured door */
+      const wall = toon("#f2a07b");
+      const wallDk = toon("#e08a66");
+      const roof = toon("#7d4b3c");
       const trim = toon("#fbfaf4");
       const brick = toon("#a9483a");
       const door = toon("#8a5a34");
       const hx = 0.24;
-      const w = 0.98, h = 1.0, d = 0.84;
+      const w = 1.06, h = 1.0, d = 0.84;
+      const fz = d / 2;
       body = box(w, h, d, hx, h / 2, 0, wall, 0.03);
       box(w + 0.02, 0.06, d + 0.02, hx, 0.03, 0, trim, 0.01);
-      box(w + 0.04, 0.04, d + 0.04, hx, h / 2, 0, trim, 0.01);
-      gable(d + 0.2, w + 0.16, 0.44, hx, h, 0, roof);
-      // front-facing two-storey gable wing on the right
-      const fx = hx + 0.25;
-      box(0.44, h, 0.22, fx, h / 2, d / 2 + 0.1, wall, 0.02);
-      gable(0.56, 0.3, 0.36, fx, h, d / 2 + 0.08, roof, false);
-      box(0.12, 0.12, 0.03, fx, h + 0.13, d / 2 + 0.22, glass, 0.06);
-      win(0.3, 0.26, fx, 0.32, d / 2 + 0.21, frame, glass);
-      box(0.02, 0.26, 0.04, fx, 0.32, d / 2 + 0.24, trim, 0.004);
-      win(0.22, 0.22, fx, 0.76, d / 2 + 0.21, frame, glass);
-      // door under a little pediment on two posts
-      const dx = hx - 0.22;
-      box(0.2, 0.4, 0.04, dx, 0.2, d / 2 + 0.01, door, 0.02);
-      ball(0.016, dx + 0.06, 0.2, d / 2 + 0.04, toon("#f2c14e"), 8);
-      gable(0.36, 0.24, 0.14, dx, 0.47, d / 2 + 0.1, roof, false);
-      box(0.38, 0.04, 0.26, dx, 0.46, d / 2 + 0.1, trim, 0.01);
-      for (const px of [-0.15, 0.15]) cyl(0.015, 0.015, 0.44, dx + px, 0.22, d / 2 + 0.21, trim, 6);
-      box(0.34, 0.04, 0.26, dx, 0.02, d / 2 + 0.12, concrete, 0.01);
-      win(0.2, 0.2, dx, 0.76, d / 2, frame, glass);
-      winSide(0.22, 0.22, hx + w / 2, 0.76, -0.12, frame, glass);
-      winSide(0.22, 0.22, hx + w / 2, 0.3, -0.12, frame, glass);
-      // tall brick chimney on the right gable end
-      box(0.14, 0.2, 0.18, hx + w / 2 + 0.04, h - 0.1, -0.15, brick, 0.02);
-      box(0.13, 0.75, 0.15, hx + w / 2 - 0.08, h + 0.2, -0.15, brick, 0.02);
-      // attached garage with its own gable, panelled door, driveway
+      hipRoof(w + 0.18, d + 0.18, 0.46, hx, h, 0, roof);
+      box(w + 0.1, 0.05, d + 0.1, hx, h + 0.01, 0, trim, 0.01);
+      // arched front door in the middle, with steps
+      box(0.2, 0.34, 0.04, hx, 0.19, fz + 0.01, door, 0.02);
+      const arch = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 16, 1, false, -Math.PI / 2, Math.PI), door, hx, 0.36, fz + 0.01);
+      arch.rotation.x = Math.PI / 2;
+      const archTrim = mesh(new THREE.TorusGeometry(0.115, 0.018, 6, 16, Math.PI), trim, hx, 0.36, fz + 0.03);
+      void archTrim;
+      ball(0.016, hx + 0.06, 0.2, fz + 0.04, toon("#f2c14e"), 8);
+      for (let st = 0; st < 2; st++) box(0.32 - st * 0.06, 0.04, 0.12, hx, 0.02 + st * 0.04, fz + 0.1 - st * 0.04, concrete, 0.01);
+      // two bay windows flanking the door
+      for (const bx of [-0.3, 0.3]) {
+        const x = hx + bx;
+        box(0.32, 0.36, 0.14, x, 0.24, fz + 0.06, wallDk, 0.02);
+        box(0.26, 0.24, 0.03, x, 0.27, fz + 0.135, glass, 0.01);
+        for (const mx of [-0.065, 0.065]) box(0.018, 0.24, 0.035, x + mx, 0.27, fz + 0.145, trim, 0.004);
+        box(0.36, 0.05, 0.18, x, 0.44, fz + 0.07, roof, 0.015);
+        box(0.3, 0.03, 0.04, x, 0.13, fz + 0.14, trim, 0.008);
+      }
+      // upstairs windows with white frames
+      for (const ux of [-0.32, 0, 0.32]) win(0.2, 0.22, hx + ux, 0.75, fz, frame, glass);
+      winSide(0.22, 0.22, hx + w / 2, 0.75, -0.1, frame, glass);
+      winSide(0.22, 0.22, hx + w / 2, 0.28, -0.1, frame, glass);
+      // chimney on the right
+      box(0.14, 0.7, 0.16, hx + w / 2 - 0.16, h + 0.2, -0.12, brick, 0.02);
+      // attached garage on the left: same pink-orange, wall-coloured door
       const gx = -0.6;
-      box(0.62, 0.56, 0.8, gx, 0.28, 0.02, wall, 0.03);
-      gable(0.94, 0.72, 0.26, gx, 0.56, 0.02, roof);
-      box(0.48, 0.42, 0.04, gx, 0.21, 0.43, trim, 0.02);
-      for (let i = 1; i <= 3; i++) box(0.46, 0.012, 0.02, gx, 0.03 + i * 0.1, 0.455, toon("#d8d0bf"), 0.004);
+      box(0.6, 0.6, 0.8, gx, 0.3, 0.02, wall, 0.03);
+      hipRoof(0.72, 0.92, 0.26, gx, 0.6, 0.02, roof);
+      box(0.48, 0.42, 0.04, gx, 0.22, 0.43, wallDk, 0.02);
+      for (let i = 1; i <= 3; i++) box(0.46, 0.012, 0.02, gx, 0.03 + i * 0.1, 0.455, wall, 0.004);
       box(0.52, 0.025, 0.42, gx, 0.012, 0.64, concrete, 0.01);
-      // front walk, hedges, mailbox
-      box(0.14, 0.02, 0.3, dx, 0.01, d / 2 + 0.38, concrete, 0.005);
-      box(0.3, 0.14, 0.12, fx + 0.02, 0.07, d / 2 + 0.36, toon("#4f9a3c"));
-      cyl(0.012, 0.012, 0.2, dx + 0.3, 0.1, d / 2 + 0.48, ink, 6);
-      box(0.08, 0.06, 0.1, dx + 0.3, 0.22, d / 2 + 0.48, toon("#4a7bd0"), 0.02);
-      topY = h + 0.7;
+      // front walk, hedge, mailbox
+      box(0.14, 0.02, 0.32, hx, 0.01, fz + 0.32, concrete, 0.005);
+      box(0.24, 0.12, 0.1, hx + 0.36, 0.06, fz + 0.24, toon("#4f9a3c"));
+      cyl(0.012, 0.012, 0.2, hx - 0.36, 0.1, fz + 0.42, ink, 6);
+      box(0.08, 0.06, 0.1, hx - 0.36, 0.22, fz + 0.42, toon("#4a7bd0"), 0.02);
+      topY = h + 0.6;
       halfW = 0.78;
       break;
     }
