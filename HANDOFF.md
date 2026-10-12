@@ -120,3 +120,18 @@ Flanders house, character tokens, Flanders AI rival with race card and loss cond
 - **Polish:** the player's car ("The Homer") could swap the token for a car; Ned could walk the ring
   path rather than gliding straight; labels could fade when the location card is open.
 - Three.js makes the JS bundle ~700 kB (fine for local). Could code-split later.
+
+## Update: Tapped Out-style town (supersedes the board/camera notes above)
+- **Full-screen map.** `CityMap` renders only `<div class="world">`; the UI floats over it
+  (`HUD.tsx`: player badge, currency pills, round Log / End Week buttons; `Sidebar.tsx`: quest
+  dock with the Flanders race, plus `LogPanel` and `Toasts`). Overlay styles are the last block
+  of `index.css`; older `.app/.grid/.board/.clock-plate` rules are unused leftovers.
+- **Isometric orthographic camera** (`camDir`, `fitView`, `updateCamera`): drag to pan, wheel or
+  pinch to zoom, tap (pointerup without drag) to pick a building.
+- **Road loop layout:** `lotFor()` places buildings so they only face +z or +x (toward the camera).
+  North row and west column sit outside the loop, south row and east column inside it.
+  `tokenPos()` puts tokens on the road; `roadPath()` adds corner waypoints; `NUDGE` fixes tight corners.
+- **Juice:** `$` bubble over your workplace, `Zzz` over home when hours are low, floating
+  `+$` / `-$` / credits / Level up popups from `sync()`, townsfolk walking the sidewalks.
+- Overlay sprites (labels, bubbles, popups) store `userData.base` and are rescaled each frame
+  by view height, because orthographic cameras ignore `sizeAttenuation`.

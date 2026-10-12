@@ -6,29 +6,15 @@ import { FLANDERS_CELL, LOCATIONS, RING, ringIndex, ringPath, getJob } from "../
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
 import type { GameState, Location, LocationId } from "../game/types";
-import Clock from "./Clock";
 import { avatarShirt } from "./Portrait";
 
 /* ----------------------------------------------------------------------------
    Springfield, built procedurally with Three.js: cel-shaded (toon) materials
    plus ink outlines (OutlineEffect) for a hand-drawn cartoon look.
 ---------------------------------------------------------------------------- */
-const COLS = 5;
-const ROWS = 4;
-const SP = 2.05; // spacing between board cells
-const STEP = 0.2; // seconds per space hopped
-
 const INK = "#1d1a17";
 const SKIN = "#fed90f";
 const TITLE_FONT = `"Luckiest Guy", "Arial Black", Impact, sans-serif`;
-
-const cellToWorld = (gx: number, gy: number) =>
-  new THREE.Vector3((gx - (COLS - 1) / 2) * SP, 0, (gy - (ROWS - 1) / 2) * SP);
-/** Tokens stand just in front of their building from the camera's view (offset toward camera, +z). */
-const tokenWorld = (gx: number, gy: number) => {
-  const p = cellToWorld(gx, gy);
-  return new THREE.Vector3(p.x, 0, p.z + 1.0);
-};
 
 /* ---- materials ------------------------------------------------------------ */
 let gradientMap: THREE.DataTexture | null = null;
@@ -421,10 +407,10 @@ function buildBuilding(loc: Location) {
       // drive-thru menu board
       cyl(0.015, 0.015, 0.3, w / 2 + 0.16, 0.15, 0.25, metal, 6);
       box(0.06, 0.18, 0.24, w / 2 + 0.16, 0.36, 0.25, red, 0.02);
-      // pole sign with the clown's head
-      const px = -0.56, pz = 0.4;
-      cyl(0.035, 0.04, 1.25, px, 0.62, pz, metal, 10);
-      const headY = 1.45;
+      // the giant clown head on the roof
+      const px = 0, pz = -0.08;
+      cyl(0.06, 0.08, 0.3, px, h + 0.35, pz, metal, 10);
+      const headY = h + 0.78;
       ball(0.25, px, headY, pz, white, 24);
       ball(0.065, px, headY - 0.01, pz + 0.25, red, 12);
       for (const sx of [-1, 1]) {
@@ -836,7 +822,7 @@ const NED_LOOK: FigureLook = {
 };
 
 /** A chunky cartoon townsperson game piece (~1 unit tall). */
-function makeFigure(look: FigureLook, ringColor: string) {
+function makeFigure(look: FigureLook, ringColor: string, withBase = true) {
   const f = new THREE.Group();
   const skin = toon(SKIN);
   const shirt = toon(look.shirt);
@@ -853,8 +839,7 @@ function makeFigure(look: FigureLook, ringColor: string) {
   };
 
   // base ring so the piece reads on the board
-  const base = add(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 28), toon(ringColor), 0, 0.025, 0);
-  base.receiveShadow = true;
+  if (withBase) add(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 28), toon(ringColor), 0, 0.025, 0).receiveShadow = true;
 
   for (const sx of [-0.065, 0.065]) {
     add(rb(0.1, 0.06, 0.16, 0.025), ink, sx, 0.08, 0.025);
@@ -920,6 +905,137 @@ function makeFigure(look: FigureLook, ringColor: string) {
   return f;
 }
 
+/* ---- town layout ------------------------------------------------------------
+   A rectangular road loop runs through the ring. Buildings only ever face the
+   camera (+z or +x), Tapped Out style: the north row and west column sit outside
+   the loop, the south row and east column sit inside it, all fronting the road.
+---------------------------------------------------------------------------- */
+const SPX = 2.6; // column spacing
+const SPZ = 2.5; // row spacing
+const RX = 2 * SPX; // road loop half-extent (x)
+const RZ = 1.5 * SPZ; // road loop half-extent (z)
+const LOT = 1.2; // building centre offset from the road's centre line
+const ROAD_W = 1.0;
+/** small per-building nudges so the tight inside corners don't collide */
+const NUDGE: Partial<Record<LocationId, number>> = { lardlad: 0.3, bowlarama: -0.15 };
+
+const V = (x: number, z: number) => new THREE.Vector3(x, 0, z);
+const colX = (gx: number) => (gx - 2) * SPX;
+const rowZ = (gy: number) => (gy - 1.5) * SPZ;
+
+function lotFor(gx: number, gy: number, id?: LocationId) {
+  const n = (id && NUDGE[id]) || 0;
+  if (gy === 0) return { pos: V(colX(gx) + n, -RZ - LOT), rotY: 0 };
+  if (gy === 3) {
+    const inset = gx === 0 ? 1.45 : gx === 4 ? -1.45 : 0;
+    return { pos: V(colX(gx) + inset + n, RZ - LOT), rotY: 0 };
+  }
+  if (gx === 0) return { pos: V(-RX - LOT, rowZ(gy)), rotY: Math.PI / 2 };
+  return { pos: V(RX - LOT, rowZ(gy)), rotY: Math.PI / 2 };
+}
+
+/** Where a token stands for a ring cell: on the road in front of the building. */
+function tokenPos(cell: number) {
+  const c = RING[cell];
+  if (c.y === 0) return V(colX(c.x), -RZ);
+  if (c.y === 3) return V(lotFor(c.x, c.y, c.id).pos.x, RZ);
+  if (c.x === 0) return V(-RX, rowZ(c.y));
+  return V(RX, rowZ(c.y));
+}
+
+/** Insert road corners so tokens follow the street instead of cutting across lawns. */
+function roadPath(points: THREE.Vector3[]) {
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const a = out[out.length - 1];
+    const b = points[i];
+    if (Math.abs(a.x - b.x) > 0.01 && Math.abs(a.z - b.z) > 0.01) {
+      const onCorner = (p: THREE.Vector3) => Math.abs(Math.abs(p.x) - RX) < 0.01 && Math.abs(Math.abs(p.z) - RZ) < 0.01;
+      const c1 = V(a.x, b.z);
+      out.push(onCorner(c1) ? c1 : V(b.x, a.z));
+    }
+    out.push(b);
+  }
+  return out;
+}
+
+/** A point on the road loop's sidewalk, by distance travelled around it. */
+function loopPoint(s: number, inset: number) {
+  const w = 2 * RX, h = 2 * RZ, per = 2 * (w + h);
+  let t = ((s % per) + per) % per;
+  const x0 = -RX - inset, z0 = -RZ - inset, x1 = RX + inset, z1 = RZ + inset;
+  const sw = x1 - x0, sh = z1 - z0;
+  t = (t / per) * 2 * (sw + sh);
+  if (t < sw) return { p: V(x0 + t, z0), dir: 0 };
+  t -= sw;
+  if (t < sh) return { p: V(x1, z0 + t), dir: 1 };
+  t -= sh;
+  if (t < sw) return { p: V(x1 - t, z1), dir: 2 };
+  t -= sw;
+  return { p: V(x0, z1 - t), dir: 3 };
+}
+
+/* ---- floating bubbles + popups (canvas sprites, drawn in the overlay pass) --- */
+function bubbleSprite(glyph: string, color: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 120;
+  canvas.height = 132;
+  const c = canvas.getContext("2d")!;
+  c.beginPath();
+  c.arc(60, 56, 50, 0, Math.PI * 2);
+  c.moveTo(48, 100);
+  c.lineTo(60, 126);
+  c.lineTo(72, 100);
+  c.fillStyle = "#ffffff";
+  c.fill();
+  c.lineWidth = 6;
+  c.strokeStyle = INK;
+  c.beginPath();
+  c.arc(60, 56, 50, 0.62 * Math.PI, 0.38 * Math.PI);
+  c.lineTo(60, 126);
+  c.closePath();
+  c.stroke();
+  c.font = `${glyph.length > 1 ? 40 : 66}px ${TITLE_FONT}`;
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.lineWidth = 8;
+  c.strokeStyle = INK;
+  c.strokeText(glyph, 60, 62);
+  c.fillStyle = color;
+  c.fillText(glyph, 60, 62);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false }));
+  sp.scale.set(0.052, 0.057, 1);
+  sp.center.set(0.5, 0);
+  return sp;
+}
+
+function popupSprite(text: string, color: string) {
+  const fs = 56;
+  const probe = document.createElement("canvas").getContext("2d")!;
+  probe.font = `${fs}px ${TITLE_FONT}`;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(probe.measureText(text).width) + 30;
+  canvas.height = fs + 30;
+  const c = canvas.getContext("2d")!;
+  c.font = `${fs}px ${TITLE_FONT}`;
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.lineJoin = "round";
+  c.lineWidth = 10;
+  c.strokeStyle = INK;
+  c.strokeText(text, canvas.width / 2, canvas.height / 2 + 3);
+  c.fillStyle = color;
+  c.fillText(text, canvas.width / 2, canvas.height / 2 + 3);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false }));
+  const s = 0.00045;
+  sp.scale.set(canvas.width * s, canvas.height * s, 1);
+  return sp;
+}
+
 /* ---- scene ---------------------------------------------------------------- */
 interface Api {
   dispose: () => void;
@@ -931,7 +1047,7 @@ function initScene(
   deps: { dispatch: (a: any) => void; onEnter: () => (id: LocationId) => void; getState: () => GameState }
 ): Api {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#7cc6f0");
+  scene.background = new THREE.Color("#6cbd47");
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -939,64 +1055,136 @@ function initScene(
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   mount.appendChild(renderer.domElement);
-  renderer.domElement.style.width = "100%";
-  renderer.domElement.style.height = "100%";
-  renderer.domElement.style.display = "block";
+  Object.assign(renderer.domElement.style, { width: "100%", height: "100%", display: "block", touchAction: "none" });
 
   const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultColor: [0.11, 0.1, 0.09], defaultAlpha: 1 });
 
-  const camera = new THREE.PerspectiveCamera(41, 1, 0.1, 100);
-  camera.position.set(0, 10.2, 8.3);
-  camera.lookAt(0, 0.5, -0.35);
+  // isometric orthographic camera, Tapped Out style
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+  const camDir = new THREE.Vector3(1, 1.25, 1).normalize();
+  const elev = Math.asin(camDir.y);
+  const bounds = { x0: -7.2, x1: 6.4, z0: -6.0, z1: 4.8 };
+  const target = V((bounds.x0 + bounds.x1) / 2, (bounds.z0 + bounds.z1) / 2);
+  let fitH = 12;
+  let zoom = 0.82; // fraction of the "whole town" view height
+
+  function fitView() {
+    const w = mount.clientWidth || 1;
+    const h = mount.clientHeight || 1;
+    camera.position.copy(target).addScaledVector(camDir, 40);
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    let rx = 0, uy = 0;
+    for (const x of [bounds.x0, bounds.x1]) for (const z of [bounds.z0, bounds.z1]) for (const y of [0, 2.4]) {
+      const d = new THREE.Vector3(x, y, z).sub(target);
+      rx = Math.max(rx, Math.abs(d.dot(right)));
+      uy = Math.max(uy, Math.abs(d.dot(up)));
+    }
+    fitH = Math.max(uy * 2, (rx * 2) / (w / h)) * 1.04;
+  }
+  function updateCamera() {
+    const w = mount.clientWidth || 1;
+    const h = mount.clientHeight || 1;
+    const vh = fitH * zoom;
+    camera.left = (-vh * (w / h)) / 2;
+    camera.right = (vh * (w / h)) / 2;
+    camera.top = vh / 2;
+    camera.bottom = -vh / 2;
+    camera.position.copy(target).addScaledVector(camDir, 40);
+    camera.lookAt(target);
+    camera.updateProjectionMatrix();
+  }
 
   // lights: bright cartoon daylight
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  const lights = () => {
+    const g = new THREE.Group();
+    g.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
+    g.add(new THREE.AmbientLight(0xffffff, 0.35));
+    return g;
+  };
+  scene.add(lights());
   const sun = new THREE.DirectionalLight(0xfff6e0, 1.9);
-  sun.position.set(5, 11, 7);
+  sun.position.set(7, 14, 4);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 40;
+  sun.shadow.camera.far = 50;
   const sc = sun.shadow.camera as THREE.OrthographicCamera;
-  sc.left = -9;
-  sc.right = 9;
-  sc.top = 9;
-  sc.bottom = -9;
+  sc.left = -12;
+  sc.right = 12;
+  sc.top = 12;
+  sc.bottom = -12;
   sun.shadow.bias = -0.0005;
   scene.add(sun);
 
-  // island slab
-  const islW = COLS * SP + 1.1;
-  const islD = ROWS * SP + 1.1;
-  const base = new THREE.Mesh(rb(islW, 0.9, islD, 0.2), toon("#a36b3f"));
-  base.position.y = -0.47;
-  base.receiveShadow = true;
-  scene.add(base);
-  const grassTop = new THREE.Mesh(rb(islW - 0.06, 0.16, islD - 0.06, 0.14), toon("#79c64e"));
-  grassTop.position.y = -0.04;
-  grassTop.receiveShadow = true;
-  scene.add(grassTop);
+  // ground: endless lawn with a few darker grass patches
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), toon("#79c64e"));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const patchMat = noOutline(toon("#6db944"));
+  for (let i = 0; i < 26; i++) {
+    const p = new THREE.Mesh(new THREE.CircleGeometry(0.5 + rnd() * 1.1, 20), patchMat);
+    p.rotation.x = -Math.PI / 2;
+    p.position.set(-13 + rnd() * 26, 0.004, -12 + rnd() * 22);
+    p.receiveShadow = true;
+    scene.add(p);
+  }
 
-  // sidewalk tiles on ring cells
-  const walk = toon("#e3ded2");
-  RING.forEach((c) => {
-    const tile = new THREE.Mesh(rb(SP * 0.92, 0.07, SP * 0.92, 0.08), walk);
-    const p = cellToWorld(c.x, c.y);
-    tile.position.set(p.x, 0.035, p.z);
-    tile.receiveShadow = true;
-    scene.add(tile);
+  // the road loop: sidewalks, asphalt, dashed yellow centre line
+  const asphalt = toon("#5d6168");
+  const walkMat = toon("#e3ded2");
+  const dash = noOutline(toon("#fed90f"));
+  const strip = (x: number, z: number, w: number, d: number, y: number, mat: THREE.Material) => {
+    const m = new THREE.Mesh(rb(w, 0.04, d, 0.015), mat);
+    m.position.set(x, y, z);
+    m.receiveShadow = true;
+    scene.add(m);
+  };
+  const side = ROAD_W + 0.5;
+  strip(0, -RZ, 2 * RX + side, side, 0.02, walkMat);
+  strip(0, RZ, 2 * RX + side, side, 0.02, walkMat);
+  strip(-RX, 0, side, 2 * RZ + side, 0.02, walkMat);
+  strip(RX, 0, side, 2 * RZ + side, 0.02, walkMat);
+  strip(0, -RZ, 2 * RX + ROAD_W, ROAD_W, 0.045, asphalt);
+  strip(0, RZ, 2 * RX + ROAD_W, ROAD_W, 0.045, asphalt);
+  strip(-RX, 0, ROAD_W, 2 * RZ + ROAD_W, 0.046, asphalt);
+  strip(RX, 0, ROAD_W, 2 * RZ + ROAD_W, 0.046, asphalt);
+  for (let x = -RX + 0.7; x < RX - 0.5; x += 0.7) {
+    strip(x, -RZ, 0.34, 0.06, 0.07, dash);
+    strip(x, RZ, 0.34, 0.06, 0.07, dash);
+  }
+  for (let z = -RZ + 0.7; z < RZ - 0.5; z += 0.7) {
+    strip(-RX, z, 0.06, 0.34, 0.07, dash);
+    strip(RX, z, 0.06, 0.34, 0.07, dash);
+  }
+
+  // street lamps on the inner corners and mid-sides
+  const lampPost = toon("#3a4a5a");
+  const lampGlow = glow("#fff2a8");
+  [[-RX + 0.85, -RZ + 0.85], [RX - 0.85 - 1.4, -RZ + 0.85], [-RX + 0.85, 0.2], [0.6, -RZ + 0.85]].forEach(([x, z]) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.9, 8), lampPost);
+    pole.position.set(x, 0.45, z);
+    pole.castShadow = true;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), lampGlow);
+    head.position.set(x, 0.95, z);
+    scene.add(pole, head);
   });
 
   // town square: plaza + the founder's statue
-  const plazaZ = (1.5 - (ROWS - 1) / 2) * SP;
-  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.75, 0.07, 40), toon("#efe2bd"));
-  plaza.position.set(0, 0.035, plazaZ);
+  const plazaX = -0.8, plazaZ = -0.55;
+  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.06, 40), toon("#efe2bd"));
+  plaza.position.set(plazaX, 0.03, plazaZ);
   plaza.receiveShadow = true;
   scene.add(plaza);
   const statue = new THREE.Group();
   const bronze = toon("#7f9a86");
   const plinth = toon("#d9d2c0");
+  const hat = toon("#6a5a44");
   const put = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
@@ -1011,99 +1199,101 @@ function initScene(
   for (const sx of [-0.05, 0.05]) put(new THREE.CylinderGeometry(0.04, 0.045, 0.3, 10), bronze, sx, 0.8, 0);
   put(new THREE.CylinderGeometry(0.1, 0.13, 0.36, 14), bronze, 0, 1.12, 0);
   put(new THREE.CapsuleGeometry(0.075, 0.08, 4, 14), bronze, 0, 1.4, 0);
-  put(new THREE.CylinderGeometry(0.08, 0.08, 0.1, 14), toon("#6a5a44"), 0, 1.52, 0);
-  put(new THREE.CylinderGeometry(0.02, 0.012, 0.22, 8), toon("#6a5a44"), -0.06, 1.48, -0.08).rotation.z = 1.2;
-  const arm = put(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), bronze, 0.14, 1.32, 0);
-  arm.rotation.z = -0.9;
-  put(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), toon("#6a5a44"), -0.13, 1.1, 0.02);
-  statue.position.set(0, 0.07, plazaZ);
+  put(new THREE.CylinderGeometry(0.08, 0.08, 0.1, 14), hat, 0, 1.52, 0);
+  put(new THREE.CylinderGeometry(0.02, 0.012, 0.22, 8), hat, -0.06, 1.48, -0.08).rotation.z = 1.2;
+  put(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), bronze, 0.14, 1.32, 0).rotation.z = -0.9;
+  put(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), hat, -0.13, 1.1, 0.02);
+  statue.position.set(plazaX, 0.06, plazaZ);
   scene.add(statue);
 
-  // round cartoon trees around the square
+  // round cartoon trees: a few in the square, a dense forest around the town
   const trunkMat = toon("#7a4a2a");
-  const leafMat = toon("#4fae4a");
-  const leafLt = toon("#6cc95a");
-  const treeSpots: [number, number][] = [
-    [-2.3, -0.7], [-1.6, 1.1], [2.3, -0.7], [1.6, 1.1], [-0.9, -1.0], [0.9, -1.0], [-2.4, 0.4], [2.4, 0.4],
-  ];
-  treeSpots.forEach(([x, z], i) => {
+  const leafA = toon("#4fae4a");
+  const leafB = toon("#6cc95a");
+  const tree = (x: number, z: number, s: number, alt: boolean) => {
     const t = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.4, 8), trunkMat);
     trunk.position.y = 0.2;
-    trunk.castShadow = true;
-    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), i % 2 ? leafMat : leafLt);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), alt ? leafA : leafB);
     crown.position.y = 0.58;
-    crown.castShadow = true;
-    const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), i % 2 ? leafLt : leafMat);
+    const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), alt ? leafB : leafA);
     crown2.position.set(0.14, 0.48, 0.08);
-    crown2.castShadow = true;
+    [trunk, crown, crown2].forEach((m) => (m.castShadow = true));
     t.add(trunk, crown, crown2);
-    t.position.set(x, 0.05, z);
+    t.position.set(x, 0, z);
+    t.scale.setScalar(s);
     scene.add(t);
-  });
+  };
+  [[-2.6, -1.8], [1.1, -1.9], [-2.7, 0.9], [1.0, 0.8], [2.3, -0.6], [-3.6, -0.5]].forEach(([x, z], i) => tree(x, z, 1, i % 2 === 0));
+  for (let i = 0; i < 110; i++) {
+    const x = -16 + rnd() * 32;
+    const z = -14 + rnd() * 26;
+    const inTown = x > -7.6 && x < 6.6 && z > -6.4 && z < 5.0;
+    if (!inTown) tree(x, z, 0.9 + rnd() * 0.7, rnd() > 0.5);
+  }
 
-  // fluffy clouds drifting behind the island
-  const cloudMat = noOutline(toon("#ffffff"));
-  const clouds: THREE.Group[] = [];
-  [[-6.5, 2.6, -7.5], [1.5, 3.4, -9], [7, 2.2, -7]].forEach(([x, y, z], i) => {
-    const c = new THREE.Group();
-    [[0, 0, 0, 0.9], [0.9, -0.15, 0.1, 0.65], [-0.9, -0.2, 0.1, 0.6], [0.35, 0.4, -0.1, 0.6]].forEach(([cx, cy, cz, r]) => {
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), cloudMat);
-      puff.position.set(cx, cy, cz);
-      c.add(puff);
-    });
-    c.position.set(x, y, z);
-    c.userData.drift = i;
-    scene.add(c);
-    clouds.push(c);
-  });
-
-  // buildings
+  // buildings, each on its lot, facing the road
   const pickables: THREE.Object3D[] = [];
   const bodies: { id: LocationId; body: THREE.Mesh }[] = [];
-  const jobMarkers: Record<string, THREE.Mesh> = {};
+  const tops: Record<string, THREE.Vector3> = {};
   LOCATIONS.forEach((loc) => {
-    const { group, body, topY, halfW } = buildBuilding(loc);
-    const p = cellToWorld(loc.x, loc.y);
-    group.position.set(p.x, 0, p.z);
+    const { group, body, topY } = buildBuilding(loc);
+    const lot = lotFor(loc.x, loc.y, loc.id);
+    group.position.copy(lot.pos);
+    group.rotation.y = lot.rotY;
     scene.add(group);
     pickables.push(group);
     bodies.push({ id: loc.id, body });
-
-    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.17), toon("#fed90f", { emissive: "#b88a00", emissiveIntensity: 0.4 }));
-    star.position.set(p.x + halfW, topY + 0.35, p.z + halfW);
-    star.visible = false;
-    star.userData.spin = true;
-    scene.add(star);
-    jobMarkers[loc.id] = star;
+    tops[loc.id] = lot.pos.clone().setY(topY + 0.15);
   });
   const fh = buildFlandersHouse();
-  const fp = cellToWorld(RING[FLANDERS_CELL].x, RING[FLANDERS_CELL].y);
-  fh.position.set(fp.x, 0, fp.z);
+  const flot = lotFor(RING[FLANDERS_CELL].x, RING[FLANDERS_CELL].y);
+  fh.position.copy(flot.pos);
+  fh.rotation.y = flot.rotY;
   scene.add(fh);
 
-  // name labels render in a final overlay pass (above the tokens)
+  // name labels render in a final overlay pass (above everything)
   const labelScene = new THREE.Scene();
   const sprites: THREE.Sprite[] = [];
   scene.traverse((o) => {
     if ((o as THREE.Sprite).isSprite) sprites.push(o as THREE.Sprite);
   });
-  sprites.forEach((sp) => labelScene.attach(sp));
+  sprites.forEach((sp) => {
+    labelScene.attach(sp);
+    sp.userData.base = sp.scale.clone().multiplyScalar(0.85);
+  });
 
-  // tokens: you, and Ned
+  // Tapped Out-style bubbles: $ over your workplace, Zzz over home late in the week
+  const jobBubble = bubbleSprite("$", "#3fae3f");
+  const sleepBubble = bubbleSprite("Zzz", "#4a8fd9");
+  labelScene.add(jobBubble, sleepBubble);
+  jobBubble.userData.base = jobBubble.scale.clone();
+  sleepBubble.userData.base = sleepBubble.scale.clone();
+
+  // ambient townsfolk strolling the sidewalks
+  const walkers = [
+    { look: { shirt: "#e8562a", pants: "#2f63d6", hair: "spikes" as const }, s: 3, v: 0.55, inset: -0.62 },
+    { look: { shirt: "#45a84e", pants: "#45a84e", hair: "beehive" as const, hairColor: "#2f63d6" }, s: 14, v: -0.45, inset: 0.62 },
+    { look: { shirt: "#7a6bb5", pants: "#4a4a5a", hair: "cap" as const, hairColor: "#55524d" }, s: 22, v: 0.4, inset: 0.62 },
+    { look: { shirt: "#d8433a", pants: "#3b4f8f", hair: "cap" as const, hairColor: "#2e5bd6", glasses: true }, s: 30, v: -0.6, inset: -0.62 },
+  ].map((w) => {
+    const fig = makeFigure(w.look, "", false);
+    fig.scale.setScalar(0.5);
+    scene.add(fig);
+    return { ...w, fig };
+  });
+
+  // tokens: you, and Ned (own scene, drawn after the city so nothing hides them)
   const st0 = deps.getState();
   const look = TOKEN_LOOK[st0.avatar] ?? TOKEN_LOOK.p0;
   const token = makeFigure({ ...look, shirt: avatarShirt(st0.avatar) }, "#fed90f");
   const ned = makeFigure(NED_LOOK, "#7fcf6d");
   ned.scale.setScalar(0.92);
   const tokenScene = new THREE.Scene();
-  tokenScene.add(token, ned);
-  tokenScene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
-  tokenScene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  tokenScene.add(token, ned, lights());
   const tokenSun = new THREE.DirectionalLight(0xfff6e0, 1.9);
   tokenSun.position.copy(sun.position);
   tokenScene.add(tokenSun);
-  // soft contact shadows on the board (the tokens can't cast real ones from their own scene)
   const blobMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x1d1a17, transparent: true, opacity: 0.28, depthWrite: false }));
   const blobGeo = new THREE.CircleGeometry(0.34, 24);
   blobGeo.rotateX(-Math.PI / 2);
@@ -1113,55 +1303,45 @@ function initScene(
 
   let curIndex = ringIndex(st0.location);
   if (curIndex < 0) curIndex = 0;
-  const startP = tokenWorld(RING[curIndex].x, RING[curIndex].y);
-  token.position.set(startP.x, 0, startP.z);
+  token.position.copy(tokenPos(curIndex));
 
   const nedTarget = new THREE.Vector3();
   function placeNed(snap: boolean) {
-    const s = deps.getState();
-    const cell = s.rival?.cell ?? FLANDERS_CELL;
-    const p = tokenWorld(RING[cell].x, RING[cell].y);
-    // share the space politely when you're both at the same spot
-    if (cell === curIndex) p.x += 0.5;
+    const cell = deps.getState().rival?.cell ?? FLANDERS_CELL;
+    const p = tokenPos(cell);
+    if (cell === curIndex) {
+      // share the space politely, along the street
+      if (RING[cell].y === 0 || RING[cell].y === 3) p.x += 0.55;
+      else p.z += 0.55;
+    }
     nedTarget.copy(p);
     if (snap) ned.position.copy(p);
   }
   placeNed(true);
 
-  // ---- interaction + animation ----
+  // ---- interaction: tap a building, drag to pan, wheel / pinch to zoom ----
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let hoverId: LocationId | null = null;
 
-  const walkState = {
-    active: false,
-    cells: [] as THREE.Vector3[],
-    seg: 0,
-    t: 0,
-    target: null as LocationId | null,
-  };
+  const walk = { active: false, pts: [] as THREE.Vector3[], seg: 0, t: 0, target: null as LocationId | null };
 
   function setHover(id: LocationId | null) {
     if (hoverId === id) return;
-    if (hoverId) {
-      const prev = bodies.find((b) => b.id === hoverId);
-      if (prev) (prev.body.material as THREE.MeshToonMaterial).emissive.setHex(0x000000);
-    }
+    const prev = bodies.find((b) => b.id === hoverId);
+    if (prev) (prev.body.material as THREE.MeshToonMaterial).emissive.setHex(0x000000);
     hoverId = id;
-    if (id) {
-      const b = bodies.find((x) => x.id === id);
-      if (b) (b.body.material as THREE.MeshToonMaterial).emissive.setHex(0x4a3c10);
-    }
-    renderer.domElement.style.cursor = id ? "pointer" : "default";
+    const b = bodies.find((x) => x.id === id);
+    if (b) (b.body.material as THREE.MeshToonMaterial).emissive.setHex(0x4a3c10);
+    renderer.domElement.style.cursor = id ? "pointer" : "grab";
   }
 
-  function pick(ev: PointerEvent): LocationId | null {
+  function pick(clientX: number, clientY: number): LocationId | null {
     const r = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
-    pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    pointer.x = ((clientX - r.left) / r.width) * 2 - 1;
+    pointer.y = -((clientY - r.top) / r.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(pickables, true);
-    for (const h of hits) {
+    for (const h of raycaster.intersectObjects(pickables, true)) {
       let o: THREE.Object3D | null = h.object;
       while (o) {
         if (o.userData.locId) return o.userData.locId as LocationId;
@@ -1173,69 +1353,151 @@ function initScene(
 
   function startWalk(toId: LocationId) {
     const st = deps.getState();
-    if (walkState.active) return;
-    if (toId === st.location) {
-      deps.onEnter()(toId);
-      return;
-    }
-    if (travelCost(st, toId) > st.hours) {
-      deps.dispatch({ type: "MOVE", to: toId });
-      return;
-    }
+    if (walk.active) return;
+    if (toId === st.location) return deps.onEnter()(toId);
+    if (travelCost(st, toId) > st.hours) return deps.dispatch({ type: "MOVE", to: toId });
     const path = ringPath(st.location, toId);
     if (path.length === 0) {
       deps.dispatch({ type: "MOVE", to: toId });
-      deps.onEnter()(toId);
-      return;
+      return deps.onEnter()(toId);
     }
-    walkState.cells = [tokenWorld(RING[curIndex].x, RING[curIndex].y), ...path.map((c) => tokenWorld(c.x, c.y))];
-    walkState.seg = 0;
-    walkState.t = 0;
-    walkState.active = true;
-    walkState.target = toId;
+    const cells = path.map((c) => RING.findIndex((r) => r.x === c.x && r.y === c.y));
+    walk.pts = roadPath([tokenPos(curIndex), ...cells.map(tokenPos)]);
+    walk.seg = 0;
+    walk.t = 0;
+    walk.active = true;
+    walk.target = toId;
     setHover(null);
   }
 
-  const onMove = (e: PointerEvent) => {
-    if (walkState.active) return;
-    setHover(pick(e));
-  };
-  const onClick = (e: PointerEvent) => {
-    const id = pick(e);
-    if (id) startWalk(id);
-  };
-  renderer.domElement.addEventListener("pointermove", onMove);
-  renderer.domElement.addEventListener("pointerdown", onClick);
+  const pointers = new Map<number, { x: number; y: number }>();
+  let downAt: { x: number; y: number } | null = null;
+  let dragged = false;
+  let pinchDist = 0;
 
-  function refreshMarkers() {
+  const panBy = (dx: number, dy: number) => {
+    const h = mount.clientHeight || 1;
+    const perPx = (fitH * zoom) / h;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
+    const fwd = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).setY(0).normalize();
+    target.addScaledVector(right, -dx * perPx).addScaledVector(fwd, (dy * perPx) / Math.sin(elev));
+    target.x = Math.min(bounds.x1, Math.max(bounds.x0, target.x));
+    target.z = Math.min(bounds.z1, Math.max(bounds.z0, target.z));
+    updateCamera();
+  };
+  const setZoom = (z: number) => {
+    zoom = Math.min(1.1, Math.max(0.4, z));
+    updateCamera();
+  };
+
+  const el = renderer.domElement;
+  const onDown = (e: PointerEvent) => {
+    el.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) {
+      downAt = { x: e.clientX, y: e.clientY };
+      dragged = false;
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      dragged = true;
+    }
+  };
+  const onMove = (e: PointerEvent) => {
+    const prev = pointers.get(e.pointerId);
+    if (!prev) {
+      if (!walk.active) setHover(pick(e.clientX, e.clientY));
+      return;
+    }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchDist > 0) setZoom(zoom * (pinchDist / d));
+      pinchDist = d;
+      return;
+    }
+    if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6) dragged = true;
+    if (dragged) {
+      panBy(e.clientX - prev.x, e.clientY - prev.y);
+      el.style.cursor = "grabbing";
+    }
+  };
+  const onUp = (e: PointerEvent) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) {
+      if (!dragged) {
+        const id = pick(e.clientX, e.clientY);
+        if (id) startWalk(id);
+      }
+      downAt = null;
+      pinchDist = 0;
+      el.style.cursor = hoverId ? "pointer" : "grab";
+    }
+  };
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    setZoom(zoom * Math.exp(e.deltaY * 0.0012));
+  };
+  el.addEventListener("pointerdown", onDown);
+  el.addEventListener("pointermove", onMove);
+  el.addEventListener("pointerup", onUp);
+  el.addEventListener("pointercancel", onUp);
+  el.addEventListener("wheel", onWheel, { passive: false });
+
+  // ---- state sync: bubbles, money popups, token snaps ----
+  const popups: { sp: THREE.Sprite; age: number; base: THREE.Vector3 }[] = [];
+  const popup = (text: string, color: string, at: THREE.Vector3, delay = 0) => {
+    const sp = popupSprite(text, color);
+    const base = at.clone().setY(1.25);
+    sp.position.copy(base);
+    sp.visible = false;
+    sp.userData.base = sp.scale.clone();
+    labelScene.add(sp);
+    popups.push({ sp, age: -delay, base });
+  };
+  let last = { cash: st0.cash + st0.savings, credits: st0.credits, career: st0.careerLevel, week: st0.week };
+
+  function refreshBubbles() {
     const st = deps.getState();
     const job = st.jobId ? getJob(st.jobId) : null;
-    Object.entries(jobMarkers).forEach(([id, m]) => (m.visible = job?.locationId === id));
+    jobBubble.visible = !!job;
+    if (job) jobBubble.position.copy(tops[job.locationId]);
+    sleepBubble.visible = st.hours <= 10;
+    sleepBubble.position.copy(tops.home);
   }
-  refreshMarkers();
+  refreshBubbles();
 
   function sync(s: GameState) {
-    refreshMarkers();
+    refreshBubbles();
     const idx = ringIndex(s.location);
-    if (idx >= 0 && idx !== curIndex && !walkState.active) {
-      // snap the token to the new location (e.g. after a week rolls over)
+    if (idx >= 0 && idx !== curIndex && !walk.active) {
       curIndex = idx;
-      const p = tokenWorld(RING[idx].x, RING[idx].y);
-      token.position.set(p.x, 0, p.z);
+      token.position.copy(tokenPos(idx));
     }
     placeNed(false);
+    const at = token.position;
+    const money = s.cash + s.savings;
+    if (s.week !== last.week) popup(`Week ${s.week}!`, "#ffffff", at);
+    else if (money !== last.cash) {
+      const d = Math.round(money - last.cash);
+      popup(d > 0 ? `+$${d.toLocaleString()}` : `-$${Math.abs(d).toLocaleString()}`, d > 0 ? "#5fd35f" : "#ff6b5a", at);
+    }
+    if (s.credits > last.credits) popup(`+${s.credits - last.credits} credits`, "#7cc4f2", at, 0.35);
+    if (s.careerLevel > last.career) popup("Level up!", "#fed90f", at, 0.7);
+    last = { cash: money, credits: s.credits, career: s.careerLevel, week: s.week };
   }
 
-  function resize() {
-    const w = mount.clientWidth || 1;
-    const h = mount.clientHeight || 1;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  }
-  resize();
-  const ro = new ResizeObserver(resize);
+  const ro = new ResizeObserver(() => {
+    renderer.setSize(mount.clientWidth || 1, mount.clientHeight || 1, false);
+    fitView();
+    updateCamera();
+  });
   ro.observe(mount);
+  renderer.setSize(mount.clientWidth || 1, mount.clientHeight || 1, false);
+  fitView();
+  updateCamera();
+  if ((mount.clientWidth || 0) > 900) panBy(80, 10);
 
   const spinners: THREE.Object3D[] = [];
   const puffs: THREE.Object3D[] = [];
@@ -1244,6 +1506,7 @@ function initScene(
     if (o.userData.puff !== undefined) puffs.push(o);
   });
 
+  const SPEED = 9; // world units per second along the road
   const clock = new THREE.Clock();
   let raf = 0;
   const tick = () => {
@@ -1251,64 +1514,89 @@ function initScene(
     const time = clock.elapsedTime;
 
     spinners.forEach((o) => (o.rotation.y += dt * 1.5));
-    puffs.forEach((o) => {
-      const k = o.userData.puff as number;
-      o.scale.setScalar(1 + Math.sin(time * 1.6 + k * 1.3) * 0.08);
-    });
-    clouds.forEach((c) => (c.position.x += Math.sin(time * 0.15 + c.userData.drift * 2) * dt * 0.08));
+    puffs.forEach((o) => o.scale.setScalar(1 + Math.sin(time * 1.6 + (o.userData.puff as number) * 1.3) * 0.08));
+    jobBubble.center.y = -Math.abs(Math.sin(time * 3)) * 0.25;
+    sleepBubble.center.y = -Math.abs(Math.sin(time * 2 + 1)) * 0.2;
 
-    // hover bob
     bodies.forEach((b) => {
       const g = b.body.parent!;
-      const want = b.id === hoverId && !walkState.active ? 0.12 : 0;
+      const want = b.id === hoverId && !walk.active ? 0.12 : 0;
       g.position.y += (want - g.position.y) * Math.min(1, dt * 12);
     });
 
-    if (walkState.active) {
-      walkState.t += dt / STEP;
-      while (walkState.t >= 1 && walkState.seg < walkState.cells.length - 1) {
-        walkState.t -= 1;
-        walkState.seg += 1;
+    walkers.forEach((w) => {
+      w.s += w.v * dt;
+      const { p, dir } = loopPoint(w.s, w.inset);
+      w.fig.position.set(p.x, Math.abs(Math.sin(time * 9 + w.s)) * 0.04, p.z);
+      const heading = [Math.PI / 2, 0, -Math.PI / 2, Math.PI][dir] + (w.v < 0 ? Math.PI : 0);
+      w.fig.rotation.y = heading;
+    });
+
+    if (walk.active) {
+      const a = walk.pts[walk.seg];
+      const b = walk.pts[walk.seg + 1];
+      const len = Math.max(0.001, a.distanceTo(b));
+      walk.t += (dt * SPEED) / len;
+      if (walk.t >= 1) {
+        walk.t = 0;
+        walk.seg += 1;
       }
-      if (walkState.seg >= walkState.cells.length - 1) {
-        const end = walkState.cells[walkState.cells.length - 1];
-        token.position.set(end.x, 0, end.z);
-        walkState.active = false;
-        const toId = walkState.target!;
+      if (walk.seg >= walk.pts.length - 1) {
+        token.position.copy(walk.pts[walk.pts.length - 1]);
+        walk.active = false;
+        const toId = walk.target!;
         curIndex = ringIndex(toId);
         deps.dispatch({ type: "MOVE", to: toId });
         deps.onEnter()(toId);
       } else {
-        const a = walkState.cells[walkState.seg];
-        const b = walkState.cells[walkState.seg + 1];
-        token.position.x = a.x + (b.x - a.x) * walkState.t;
-        token.position.z = a.z + (b.z - a.z) * walkState.t;
-        token.position.y = Math.sin(walkState.t * Math.PI) * 0.45; // hop arc
-        token.rotation.z = Math.sin(walkState.t * Math.PI * 2) * 0.12; // waddle
+        const a2 = walk.pts[walk.seg];
+        const b2 = walk.pts[walk.seg + 1];
+        token.position.lerpVectors(a2, b2, walk.t);
+        token.position.y = Math.sin(walk.t * Math.PI) * Math.min(0.45, a2.distanceTo(b2) * 0.18);
+        token.rotation.z = Math.sin(walk.t * Math.PI * 2) * 0.12;
       }
     } else {
       token.position.y += (0 - token.position.y) * Math.min(1, dt * 10);
       token.rotation.z *= 0.8;
     }
 
-    // Ned strolls (with a little bounce) toward wherever he's headed
     const dx = nedTarget.x - ned.position.x;
     const dz = nedTarget.z - ned.position.z;
     const dist = Math.hypot(dx, dz);
     if (dist > 0.01) {
-      const stepLen = Math.min(dist, dt * 3.2);
-      ned.position.x += (dx / dist) * stepLen;
-      ned.position.z += (dz / dist) * stepLen;
+      const step = Math.min(dist, dt * 3.2);
+      ned.position.x += (dx / dist) * step;
+      ned.position.z += (dz / dist) * step;
       ned.position.y = Math.abs(Math.sin(time * 14)) * 0.12;
     } else {
       ned.position.y *= 0.8;
     }
-    // idle sway, so both pieces feel alive
-    token.rotation.y = walkState.active ? 0 : Math.sin(time * 1.4) * 0.12;
+    token.rotation.y = walk.active ? 0 : Math.sin(time * 1.4) * 0.12;
     ned.rotation.y = Math.sin(time * 1.2 + 1) * 0.14;
 
-    tokenBlob.position.set(token.position.x, 0.075, token.position.z);
-    nedBlob.position.set(ned.position.x, 0.075, ned.position.z);
+    for (let i = popups.length - 1; i >= 0; i--) {
+      const p = popups[i];
+      p.age += dt;
+      p.sp.visible = p.age >= 0;
+      if (p.age < 0) continue;
+      p.sp.position.copy(p.base).setY(p.base.y + p.age * 0.9);
+      (p.sp.material as THREE.SpriteMaterial).opacity = Math.min(1, 2.2 - p.age * 1.3);
+      if (p.age > 1.7) {
+        labelScene.remove(p.sp);
+        (p.sp.material as THREE.SpriteMaterial).map?.dispose();
+        p.sp.material.dispose();
+        popups.splice(i, 1);
+      }
+    }
+
+    // overlay sprites keep a constant on-screen size at any zoom
+    const k = fitH * zoom * 1.15;
+    labelScene.children.forEach((o) => {
+      if (o.userData.base) o.scale.copy(o.userData.base).multiplyScalar(k);
+    });
+
+    tokenBlob.position.set(token.position.x, 0.08, token.position.z);
+    nedBlob.position.set(ned.position.x, 0.08, ned.position.z);
     tokenBlob.scale.setScalar(1 - token.position.y * 0.6);
 
     outline.autoClear = true;
@@ -1327,20 +1615,25 @@ function initScene(
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
-      renderer.domElement.removeEventListener("pointermove", onMove);
-      renderer.domElement.removeEventListener("pointerdown", onClick);
-      [scene, tokenScene, labelScene].forEach((root) => root.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.geometry) m.geometry.dispose();
-        const mat = (m as any).material;
-        if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-        else if (mat) {
-          if (mat.map) mat.map.dispose();
-          mat.dispose();
-        }
-      }));
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("wheel", onWheel);
+      [scene, tokenScene, labelScene].forEach((root) =>
+        root.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.geometry) m.geometry.dispose();
+          const mat = (m as any).material;
+          if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+          else if (mat) {
+            if (mat.map) mat.map.dispose();
+            mat.dispose();
+          }
+        })
+      );
       renderer.dispose();
-      if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+      if (el.parentNode) el.parentNode.removeChild(el);
     },
     sync,
   };
@@ -1379,33 +1672,10 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // react to external changes (week rollover sends you home, Ned wanders)
+  // react to state changes: week rollover, Ned wandering, money popups, bubbles
   useEffect(() => {
     apiRef.current?.sync(state);
-  }, [state.location, state.jobId, state.rival.cell]);
+  }, [state]);
 
-  return (
-    <div className="card stage board-card">
-      <div className="map-head">
-        <div>
-          <h2>Springfield</h2>
-          <p>Pick a spot. You walk the board, then head inside.</p>
-        </div>
-        <span className="tag">{state.hours}h left</span>
-      </div>
-
-      <div className="board board-3d">
-        <div ref={mountRef} className="board-canvas" />
-        <div className="clock-plate">
-          <Clock hours={state.hours} total={state.hoursPerWeek} size={58} />
-          <div className="clock-meta">
-            <span className="wp-week">Week {state.week}</span>
-            <span className="wp-hours">
-              {state.hours}h of {state.hoursPerWeek}h left
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <div ref={mountRef} className="world" />;
 }
