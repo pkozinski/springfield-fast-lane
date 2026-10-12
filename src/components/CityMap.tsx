@@ -1,655 +1,929 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { LOCATIONS, RING, ringPath, getJob } from "../game/data";
+import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
+import { FLANDERS_CELL, LOCATIONS, RING, ringIndex, ringPath, getJob } from "../game/data";
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
 import type { GameState, Location, LocationId } from "../game/types";
 import Clock from "./Clock";
+import { avatarShirt } from "./Portrait";
 
 /* ----------------------------------------------------------------------------
-   Real 3D board, built procedurally with Three.js (all original meshes).
+   Springfield, built procedurally with Three.js: cel-shaded (toon) materials
+   plus ink outlines (OutlineEffect) for a hand-drawn cartoon look.
 ---------------------------------------------------------------------------- */
 const COLS = 5;
 const ROWS = 4;
 const SP = 2.05; // spacing between board cells
 const STEP = 0.2; // seconds per space hopped
 
+const INK = "#1d1a17";
+const SKIN = "#fed90f";
+const TITLE_FONT = `"Luckiest Guy", "Arial Black", Impact, sans-serif`;
+
 const cellToWorld = (gx: number, gy: number) =>
   new THREE.Vector3((gx - (COLS - 1) / 2) * SP, 0, (gy - (ROWS - 1) / 2) * SP);
-/** Token stands just in front of its building from the camera's view (offset toward camera, +z). */
+/** Tokens stand just in front of their building from the camera's view (offset toward camera, +z). */
 const tokenWorld = (gx: number, gy: number) => {
   const p = cellToWorld(gx, gy);
   return new THREE.Vector3(p.x, 0, p.z + 1.0);
 };
-const ringIndexOf = (id: LocationId) => RING.findIndex((c) => c.id === id);
 
-function shade(hex: string, amt: number) {
-  const c = new THREE.Color(hex);
-  if (amt >= 0) c.lerp(new THREE.Color("#ffffff"), amt);
-  else c.lerp(new THREE.Color("#000000"), -amt);
-  return c;
+/* ---- materials ------------------------------------------------------------ */
+let gradientMap: THREE.DataTexture | null = null;
+/** Three hard light bands: the classic cel-shaded look. */
+function toonGradient() {
+  if (!gradientMap) {
+    gradientMap = new THREE.DataTexture(new Uint8Array([125, 195, 255]), 3, 1, THREE.RedFormat);
+    gradientMap.minFilter = THREE.NearestFilter;
+    gradientMap.magFilter = THREE.NearestFilter;
+    gradientMap.needsUpdate = true;
+  }
+  return gradientMap;
+}
+function toon(color: string, extra: THREE.MeshToonMaterialParameters = {}) {
+  return new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), ...extra });
+}
+/** A self-lit material (neon, bulbs, glowing goo). */
+function glow(color: string) {
+  return toon(color, { emissive: color, emissiveIntensity: 0.75 });
+}
+function noOutline<M extends THREE.Material>(m: M): M {
+  m.userData.outlineParameters = { visible: false };
+  return m;
 }
 
-/** Rounded (beveled) box — soft edges read far more premium than hard primitives. */
-function rb(w: number, h: number, d: number, radius = 0.09) {
+/** Rounded (beveled) box: soft, toy-like edges. */
+function rb(w: number, h: number, d: number, radius = 0.05) {
   const r = Math.min(radius, Math.min(w, h, d) / 2 - 0.001);
-  return new RoundedBoxGeometry(w, h, d, 4, Math.max(0.005, r));
+  return new RoundedBoxGeometry(w, h, d, 3, Math.max(0.004, r));
 }
 
-function makeLabel(text: string) {
-  const fs = 34;
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d")!;
-  ctx.font = `600 ${fs}px Georgia, serif`;
-  const w = Math.ceil(ctx.measureText(text).width);
-  canvas.width = w + 34;
-  canvas.height = fs + 26;
-  const c = canvas.getContext("2d")!;
-  c.font = `600 ${fs}px Georgia, serif`;
+/* ---- canvas text: signs + labels ----------------------------------------- */
+function roundRectPath(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.min(r, w / 2, h / 2);
   c.beginPath();
-  (c as any).roundRect(2, 2, canvas.width - 4, canvas.height - 4, 12);
-  c.fillStyle = "#fbf6ea";
-  c.fill();
-  c.lineWidth = 3;
-  c.strokeStyle = "#c9a24b";
-  c.stroke();
-  c.fillStyle = "#1c1710";
+  c.moveTo(x + rr, y);
+  c.arcTo(x + w, y, x + w, y + h, rr);
+  c.arcTo(x + w, y + h, x, y + h, rr);
+  c.arcTo(x, y + h, x, y, rr);
+  c.arcTo(x, y, x + w, y, rr);
+  c.closePath();
+}
+
+interface SignOpts {
+  bg?: string;
+  fg: string;
+  stroke?: string;
+  border?: string | null;
+  vertical?: boolean;
+  radius?: number;
+}
+
+function signCanvas(text: string, pxW: number, pxH: number, o: SignOpts) {
+  const canvas = document.createElement("canvas");
+  canvas.width = pxW;
+  canvas.height = pxH;
+  const c = canvas.getContext("2d")!;
+  if (o.bg) {
+    roundRectPath(c, 4, 4, pxW - 8, pxH - 8, o.radius ?? Math.min(pxW, pxH) * 0.18);
+    c.fillStyle = o.bg;
+    c.fill();
+    if (o.border !== null) {
+      c.lineWidth = 7;
+      c.strokeStyle = o.border ?? INK;
+      c.stroke();
+    }
+  }
   c.textAlign = "center";
   c.textBaseline = "middle";
-  c.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
+  c.lineJoin = "round";
+  const draw = (t: string, x: number, y: number, size: number) => {
+    c.font = `${size}px ${TITLE_FONT}`;
+    if (o.stroke) {
+      c.lineWidth = size * 0.16;
+      c.strokeStyle = o.stroke;
+      c.strokeText(t, x, y);
+    }
+    c.fillStyle = o.fg;
+    c.fillText(t, x, y);
+  };
+  if (o.vertical) {
+    const chars = [...text];
+    const size = Math.min(pxW * 0.68, (pxH * 0.86) / chars.length);
+    chars.forEach((ch, i) => draw(ch, pxW / 2, pxH / 2 + (i - (chars.length - 1) / 2) * size + size * 0.08, size));
+  } else if (text) {
+    let size = pxH * 0.62;
+    c.font = `${size}px ${TITLE_FONT}`;
+    const maxW = pxW * 0.86;
+    const m = c.measureText(text).width;
+    if (m > maxW) size *= maxW / m;
+    draw(text, pxW / 2, pxH / 2 + size * 0.07, size);
+  }
+  return canvas;
+}
+
+/** A flat sign plane facing +z, with crisp canvas lettering. */
+function signMesh(text: string, w: number, h: number, o: SignOpts) {
+  const base = 128;
+  const pxW = o.vertical ? base : Math.min(2048, Math.round((base * w) / h));
+  const pxH = o.vertical ? Math.min(2048, Math.round((base * h) / w)) : base;
+  const tex = new THREE.CanvasTexture(signCanvas(text, pxW, pxH, o));
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const mat = noOutline(new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+}
+
+function makeLabel(text: string, scale = 1) {
+  const fs = 40;
+  const probe = document.createElement("canvas").getContext("2d")!;
+  probe.font = `${fs}px ${TITLE_FONT}`;
+  const w = Math.ceil(probe.measureText(text).width) + 40;
+  const h = fs + 26;
+  const canvas = document.createElement("canvas");
+  canvas.width = w + 8;
+  canvas.height = h + 8;
+  const c = canvas.getContext("2d")!;
+  roundRectPath(c, 4, 4, w, h, h / 2);
+  c.fillStyle = "#fffdf3";
+  c.fill();
+  c.lineWidth = 5;
+  c.strokeStyle = INK;
+  c.stroke();
+  c.font = `${fs}px ${TITLE_FONT}`;
+  c.fillStyle = INK;
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillText(text, canvas.width / 2, canvas.height / 2 + 3);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true })
+    new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false })
   );
-  const s = 0.0095;
+  const s = 0.00055 * scale;
   sprite.scale.set(canvas.width * s, canvas.height * s, 1);
   sprite.renderOrder = 10;
   return sprite;
 }
 
-/** Add a grid of emissive windows to the front (+Z) and right (+X) faces of a box. */
-function addWindows(g: THREE.Group, w: number, h: number, d: number, mat: THREE.Material, dense = false) {
-  const cols = dense ? [-0.3, 0, 0.3] : [-0.28, 0.28];
-  const rowGap = dense ? 0.42 : 0.55;
-  const floors = Math.max(1, Math.floor((h - 0.5) / rowGap) + 1);
-  const ws = dense ? 0.2 : 0.26;
-  for (let f = 0; f < floors; f++) {
-    const wy = 0.42 + f * rowGap;
-    if (wy > h - 0.2) break;
-    for (const sx of cols) {
-      const wz = new THREE.Mesh(rb(ws, 0.28, 0.05, 0.02), mat);
-      wz.position.set(sx * w, wy, d / 2 + 0.01);
-      g.add(wz);
-      const wx = new THREE.Mesh(rb(0.05, 0.28, ws, 0.02), mat);
-      wx.position.set(w / 2 + 0.01, wy, sx * d);
-      g.add(wx);
-    }
-  }
-}
-
-/** Build one building with a silhouette unique to its establishment. */
-function buildBuilding(loc: Location) {
-  const g = new THREE.Group();
-  g.userData.locId = loc.id;
-
-  const bodyMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(loc.accent), roughness: 0.5, metalness: 0.0, clearcoat: 0.5, clearcoatRoughness: 0.4, envMapIntensity: 1.0 });
-  const roofMat = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, -0.22), roughness: 0.6, clearcoat: 0.3, envMapIntensity: 0.9 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.18), roughness: 0.5, envMapIntensity: 1.0 });
-  const winMat = new THREE.MeshPhysicalMaterial({ color: "#cfeaff", emissive: "#4a7ea8", emissiveIntensity: 0.35, roughness: 0.08, metalness: 0, clearcoat: 1, envMapIntensity: 1.4 });
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: "#aed8f2", emissive: "#2f6c94", emissiveIntensity: 0.35, roughness: 0.05, metalness: 0.1, clearcoat: 1, envMapIntensity: 1.6 });
-  const gold = new THREE.MeshStandardMaterial({ color: "#e0b954", roughness: 0.25, metalness: 0.95, envMapIntensity: 1.3 });
-  const metal = new THREE.MeshStandardMaterial({ color: "#9aa1a9", roughness: 0.3, metalness: 0.85, envMapIntensity: 1.2 });
-  const doorMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.55), roughness: 0.5, envMapIntensity: 0.9 });
-
-  let body: THREE.Mesh;
-  let topY = 1.5;
-  let halfW = 0.65;
-
-  const mkBox = (w: number, h: number, d: number, y: number, mat: THREE.Material = bodyMat) => {
-    const m = new THREE.Mesh(rb(w, h, d), mat);
-    m.position.y = y;
+/* ---- shared kit for building Springfield --------------------------------- */
+function kit(g: THREE.Group) {
+  const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
     m.castShadow = true;
     m.receiveShadow = true;
     g.add(m);
     return m;
   };
-  const flatRoof = (w: number, h: number, d: number) => {
-    const r = mkBox(w + 0.12, 0.16, d + 0.12, h + 0.08, roofMat);
-    r.castShadow = true;
-    const rim = mkBox(w + 0.18, 0.08, d + 0.18, h + 0.17, rimMat);
-    rim.receiveShadow = true;
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, r = 0.05) =>
+    mesh(rb(w, h, d, r), mat, x, y, z);
+  const cyl = (rt: number, rbot: number, h: number, x: number, y: number, z: number, mat: THREE.Material, seg = 20) =>
+    mesh(new THREE.CylinderGeometry(rt, rbot, h, seg), mat, x, y, z);
+  const ball = (r: number, x: number, y: number, z: number, mat: THREE.Material, seg = 18) =>
+    mesh(new THREE.SphereGeometry(r, seg, Math.max(8, Math.round(seg * 0.7))), mat, x, y, z);
+  /** Four-sided hip roof spanning w x d, base at y. */
+  const hipRoof = (w: number, d: number, h: number, x: number, y: number, z: number, mat: THREE.Material) => {
+    const geo = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4);
+    geo.rotateY(Math.PI / 4);
+    const m = mesh(geo, mat, x, y + h / 2, z);
+    m.scale.set(w, h, d);
+    return m;
   };
-  const door = (d: number) => {
-    const m = new THREE.Mesh(rb(0.34, 0.5, 0.06, 0.03), doorMat);
-    m.position.set(0, 0.25, d / 2 + 0.02);
-    g.add(m);
+  /** A truncated, sloped fascia (mansard band). */
+  const mansard = (w: number, d: number, h: number, x: number, y: number, z: number, mat: THREE.Material, taper = 0.82) => {
+    const geo = new THREE.CylinderGeometry(Math.SQRT1_2 * taper, Math.SQRT1_2, 1, 4, 1);
+    geo.rotateY(Math.PI / 4);
+    const m = mesh(geo, mat, x, y + h / 2, z);
+    m.scale.set(w, h, d);
+    return m;
   };
+  /** Framed window on the front (+z) face. */
+  const win = (w: number, h: number, x: number, y: number, z: number, frame: THREE.Material, glass: THREE.Material) => {
+    box(w + 0.05, h + 0.05, 0.03, x, y, z, frame, 0.012);
+    return box(w, h, 0.035, x, y, z + 0.012, glass, 0.01);
+  };
+  /** Framed window on the right (+x) face. */
+  const winSide = (w: number, h: number, x: number, y: number, z: number, frame: THREE.Material, glass: THREE.Material) => {
+    box(0.03, h + 0.05, w + 0.05, x, y, z, frame, 0.012);
+    return box(0.035, h, w, x + 0.012, y, z, glass, 0.01);
+  };
+  const sign = (text: string, w: number, h: number, x: number, y: number, z: number, o: SignOpts) => {
+    const s = signMesh(text, w, h, o);
+    s.position.set(x, y, z);
+    g.add(s);
+    return s;
+  };
+  /** Little cartoon townsperson (no eyes at this scale). */
+  const person = (x: number, z: number, shirt: string, hair: string, ry = 0) => {
+    const p = new THREE.Group();
+    const add = (m: THREE.Mesh) => {
+      m.castShadow = true;
+      p.add(m);
+      return m;
+    };
+    const pants = toon("#3b5c99");
+    for (const sx of [-0.025, 0.025]) {
+      const leg = add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.1, 8), pants));
+      leg.position.set(sx, 0.05, 0);
+    }
+    const torso = add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.11, 10), toon(shirt)));
+    torso.position.y = 0.155;
+    const head = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.05, 4, 10), toon(SKIN)));
+    head.position.y = 0.27;
+    const top = add(new THREE.Mesh(new THREE.SphereGeometry(0.043, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), toon(hair)));
+    top.position.y = 0.29;
+    p.position.set(x, 0, z);
+    p.rotation.y = ry;
+    g.add(p);
+    return p;
+  };
+  return { mesh, box, cyl, ball, hipRoof, mansard, win, winSide, sign, person };
+}
+
+/* ---- the landmarks --------------------------------------------------------- */
+function buildBuilding(loc: Location) {
+  const g = new THREE.Group();
+  g.userData.locId = loc.id;
+  const { mesh, box, cyl, ball, hipRoof, mansard, win, winSide, sign, person } = kit(g);
+
+  // common palette
+  const white = toon("#fbfaf4");
+  const frame = toon("#fbfaf4");
+  const glass = toon("#8fd3f4", { emissive: "#3c8fc2", emissiveIntensity: 0.25 });
+  const darkGlass = toon("#4b7c9e");
+  const concrete = toon("#d6d1c4");
+  const roofGrey = toon("#7b7d86");
+  const metal = toon("#b9bec6");
+  const ink = toon("#2b2723");
+  const accent = toon(loc.accent);
+
+  let body: THREE.Mesh;
+  let topY = 1.5;
+  let halfW = 0.65;
 
   switch (loc.id) {
+    /* -------- 742 Evergreen Terrace -------- */
     case "home": {
-      const w = 1.0, h = 0.85, d = 1.0;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.85, 0.7, 4), roofMat);
-      roof.rotation.y = Math.PI / 4;
-      roof.position.y = h + 0.35;
-      roof.castShadow = true;
-      g.add(roof);
-      mkBox(0.16, 0.42, 0.16, h + 0.42, roofMat).position.x = w * 0.28;
-      topY = h + 0.7;
-      halfW = w / 2;
+      const wall = toon("#f0a07c");
+      const roof = toon("#9a4f33");
+      const brick = toon("#b5533c");
+      const door = toon("#8a5a34");
+      const hx = 0.2;
+      const w = 1.05, h = 1.02, d = 0.88;
+      body = box(w, h, d, hx, h / 2, 0, wall);
+      hipRoof(w + 0.16, d + 0.16, 0.52, hx, h, 0, roof);
+      box(0.15, 0.5, 0.15, hx + 0.32, h + 0.3, -0.16, brick);
+      // ground floor: door + porch roof + steps, windows either side
+      box(0.24, 0.42, 0.04, hx, 0.21, d / 2 + 0.01, door);
+      ball(0.018, hx + 0.07, 0.21, d / 2 + 0.04, toon("#f2c14e"), 8);
+      box(0.44, 0.04, 0.2, hx, 0.47, d / 2 + 0.09, roof);
+      box(0.38, 0.05, 0.14, hx, 0.025, d / 2 + 0.08, concrete);
+      for (const wx of [-0.27, 0.27]) win(0.2, 0.22, hx + wx, 0.3, d / 2, frame, glass);
+      for (const wx of [-0.3, 0, 0.3]) win(0.18, 0.2, hx + wx, 0.76, d / 2, frame, glass);
+      winSide(0.2, 0.2, hx + w / 2, 0.76, 0.05, frame, glass);
+      winSide(0.2, 0.2, hx + w / 2, 0.3, 0.05, frame, glass);
+      // attached garage
+      const gx = -0.6;
+      box(0.62, 0.56, 0.84, gx, 0.28, 0.02, wall);
+      hipRoof(0.74, 0.96, 0.28, gx, 0.56, 0.02, roof);
+      box(0.48, 0.4, 0.04, gx, 0.2, 0.45, white);
+      for (let i = 1; i <= 3; i++) box(0.46, 0.012, 0.02, gx, 0.04 + i * 0.1, 0.475, toon("#d8d0bf"), 0.004);
+      // driveway, hedge, mailbox
+      box(0.5, 0.025, 0.42, gx, 0.012, 0.66, concrete, 0.01);
+      box(0.32, 0.14, 0.12, hx + 0.36, 0.07, d / 2 + 0.22, toon("#4f9a3c"));
+      cyl(0.012, 0.012, 0.2, hx - 0.38, 0.1, d / 2 + 0.3, ink, 6);
+      box(0.08, 0.06, 0.1, hx - 0.38, 0.22, d / 2 + 0.3, toon("#4a7bd0"), 0.02);
+      topY = h + 0.62;
+      halfW = 0.75;
       break;
     }
+
+    /* -------- Springfield Employment Office -------- */
     case "employment": {
-      // stepped office tower
-      const w = 1.1, h = 1.3, d = 1.0;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      mkBox(0.78, 0.7, 0.72, h + 0.35);
-      flatRoof(0.78, h + 0.7, 0.72);
-      topY = h + 0.9;
+      const wall = toon("#ecdcae");
+      const w = 1.25, h = 1.12, d = 0.95;
+      body = box(w, h, d, 0, h / 2, 0, wall);
+      box(w + 0.08, 0.1, d + 0.08, 0, h + 0.05, 0, accent);
+      box(w - 0.12, 0.06, d - 0.12, 0, h + 0.12, 0, roofGrey);
+      // upper storey windows
+      for (const wx of [-0.42, -0.14, 0.14, 0.42]) win(0.17, 0.24, wx, 0.86, d / 2, frame, glass);
+      // sign band between floors
+      box(1.0, 0.16, 0.04, 0, 0.6, d / 2 + 0.01, accent, 0.02);
+      sign("EMPLOYMENT OFFICE", 0.94, 0.12, 0, 0.6, d / 2 + 0.035, { fg: "#ffffff", stroke: INK });
+      // glass doors + awning + steps
+      box(0.36, 0.42, 0.04, 0, 0.21, d / 2 + 0.01, darkGlass, 0.02);
+      box(0.012, 0.42, 0.05, 0, 0.21, d / 2 + 0.02, frame, 0.004);
+      const awn = box(0.56, 0.04, 0.24, 0, 0.47, d / 2 + 0.12, accent, 0.015);
+      awn.rotation.x = 0.18;
+      box(0.5, 0.05, 0.14, 0, 0.025, d / 2 + 0.08, concrete);
+      for (const wx of [-0.42, 0.42]) win(0.2, 0.22, wx, 0.28, d / 2, frame, glass);
+      winSide(0.24, 0.24, w / 2, 0.86, 0, frame, glass);
+      winSide(0.24, 0.22, w / 2, 0.28, 0, frame, glass);
+      // flagpole + flag
+      cyl(0.014, 0.014, 0.85, 0.5, h + 0.5, 0.25, metal, 8);
+      ball(0.025, 0.5, h + 0.93, 0.25, toon("#f2c14e"), 8);
+      const flag = signMesh("", 0.3, 0.18, { bg: "#e23b3b", fg: "#fff", border: null, radius: 2 });
+      const fc = (flag.material as THREE.MeshBasicMaterial).map!.image as HTMLCanvasElement;
+      const fx = fc.getContext("2d")!;
+      for (let i = 0; i < 7; i++) {
+        fx.fillStyle = i % 2 ? "#fbfaf4" : "#e23b3b";
+        fx.fillRect(0, (i * fc.height) / 7, fc.width, fc.height / 7 + 1);
+      }
+      fx.fillStyle = "#2f4fa8";
+      fx.fillRect(0, 0, fc.width * 0.42, fc.height * 0.56);
+      (flag.material as THREE.MeshBasicMaterial).side = THREE.DoubleSide;
+      flag.position.set(0.66, h + 0.8, 0.25);
+      g.add(flag);
+      // take a number: a little queue out front
+      person(-0.52, d / 2 + 0.2, "#e8562a", "#5a3a1e");
+      person(-0.36, d / 2 + 0.24, "#45a84e", "#2f63d6");
+      person(-0.2, d / 2 + 0.22, "#f6f6f2", SKIN);
+      topY = h + 0.3;
       halfW = w / 2;
       break;
     }
+
+    /* -------- Springfield University -------- */
     case "university": {
-      /* -------- full detail pass: collegiate hall -------- */
-      const w = 1.5, d = 1.2, h = 1.05;
-      const baseH = 0.16;
-      const stone = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, 0.06), roughness: 0.6, clearcoat: 0.25, envMapIntensity: 0.9 });
-      const stoneLt = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.24), roughness: 0.55, envMapIntensity: 0.9 });
-      const archGlass = new THREE.MeshPhysicalMaterial({ color: "#cfe8f6", emissive: "#3f6f90", emissiveIntensity: 0.3, roughness: 0.08, clearcoat: 1, envMapIntensity: 1.4 });
-      const roofSlate = new THREE.MeshStandardMaterial({ color: "#5a5f6b", roughness: 0.7, metalness: 0.1, envMapIntensity: 0.8 });
-
-      // stylobate / steps
-      mkBox(w + 0.12, baseH, d + 0.12, baseH / 2, stoneLt).receiveShadow = true;
-
-      // main hall
-      body = mkBox(w, h, d, baseH + h / 2, stone);
-
-      // lower side wings
-      for (const sx of [-1, 1]) {
-        const wing = mkBox(0.5, h - 0.28, 0.9, baseH + (h - 0.28) / 2, stone);
-        wing.position.set(sx * (w / 2 - 0.02), baseH + (h - 0.28) / 2, -0.05);
-        const wingRoof = mkBox(0.56, 0.12, 0.96, baseH + h - 0.28 + 0.06, roofSlate);
-        wingRoof.position.set(sx * (w / 2 - 0.02), baseH + h - 0.28 + 0.06, -0.05);
-      }
-
-      // tall arched windows across the facade
-      for (const wx of [-0.42, 0, 0.42]) {
-        const pane = mkBox(0.2, 0.62, 0.05, baseH + 0.46, archGlass);
-        pane.position.set(wx, baseH + 0.46, d / 2 + 0.01);
-        const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.05, 14, 1, false, 0, Math.PI), archGlass);
-        arch.rotation.x = Math.PI / 2;
-        arch.rotation.z = 0;
-        arch.position.set(wx, baseH + 0.77, d / 2 + 0.01);
-        g.add(arch);
-        const trim = mkBox(0.26, 0.04, 0.06, baseH + 0.15, stoneLt);
-        trim.position.set(wx, baseH + 0.15, d / 2 + 0.02);
-      }
-
-      // entrance portico: columns + pediment + steps + doors
-      for (let s = 0; s < 3; s++) {
-        const step = mkBox(0.74 - s * 0.05, 0.05, 0.14 - s * 0.03, 0.025 + s * 0.05, stoneLt);
-        step.position.z = d / 2 + 0.26 - s * 0.08;
-      }
-      for (const cx2 of [-0.24, -0.08, 0.08, 0.24]) {
-        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.66, 14), stoneLt);
-        col.position.set(cx2, baseH + 0.33, d / 2 + 0.16);
-        col.castShadow = true;
-        g.add(col);
-        const cap = mkBox(0.14, 0.05, 0.14, baseH + 0.68, stoneLt);
-        cap.position.set(cx2, baseH + 0.68, d / 2 + 0.16);
-      }
-      // entablature + pediment over the portico
-      const entab = mkBox(0.74, 0.1, 0.18, baseH + 0.73, stoneLt);
-      entab.position.z = d / 2 + 0.16;
-      const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.18, 3), stoneLt);
-      ped.rotation.y = Math.PI / 2;
-      ped.scale.set(1, 0.42, 1);
-      ped.position.set(0, baseH + 0.86, d / 2 + 0.16);
-      g.add(ped);
-      // doors under the portico
-      for (const dx of [-0.1, 0.1]) {
-        const dr = mkBox(0.17, 0.46, 0.05, baseH + 0.23, new THREE.MeshStandardMaterial({ color: shade(loc.accent, -0.5), roughness: 0.5 }));
-        dr.position.set(dx, baseH + 0.23, d / 2 + 0.02);
-      }
-
-      // slate hip-ish roof + balustrade
-      const roofTop = baseH + h;
-      const roof = mkBox(w + 0.1, 0.14, d + 0.1, roofTop + 0.07, roofSlate);
-      roof.castShadow = true;
-      void roof;
-      for (let i = 0; i <= 7; i++) {
-        const bx = -w / 2 + 0.05 + (i * (w - 0.1)) / 7;
-        const baluster = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 6), stoneLt);
-        baluster.position.set(bx, roofTop + 0.2, d / 2 - 0.02);
-        g.add(baluster);
-      }
-
-      // central clock tower: shaft + clock faces + cupola dome + finial
-      const towerY = roofTop + 0.5;
-      mkBox(0.5, 1.0, 0.5, towerY, stone);
-      const belfry = mkBox(0.42, 0.26, 0.42, towerY + 0.62, stoneLt);
-      void belfry;
-      for (const [fx, fz, rotY] of [[0, 0.26, 0] as const, [0.26, 0, Math.PI / 2] as const]) {
-        const clock = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 20), gold);
-        clock.rotation.x = Math.PI / 2;
-        clock.rotation.y = rotY;
-        clock.position.set(fx, towerY + 0.2, fz);
-        g.add(clock);
-      }
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.3, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2), gold);
-      dome.position.y = towerY + 0.75;
-      dome.castShadow = true;
-      g.add(dome);
-      const finial = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.2, 6), gold);
-      finial.position.y = towerY + 1.05;
-      g.add(finial);
-      const fball = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), gold);
-      fball.position.y = towerY + 1.17;
-      g.add(fball);
-
-      topY = towerY + 1.3;
-      halfW = w / 2;
-      break;
-    }
-    case "bank": {
-      // round rotunda + dome + columns
-      const r = 0.72, h = 1.3;
-      body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 28), bodyMat);
-      body.position.y = h / 2;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      g.add(body);
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(r + 0.02, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), roofMat);
-      dome.position.y = h;
-      dome.castShadow = true;
-      g.add(dome);
-      const finial = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), gold);
-      finial.position.y = h + r + 0.05;
-      g.add(finial);
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, h * 0.9, 10), gold);
-        col.position.set(Math.cos(a) * (r + 0.12), (h * 0.9) / 2, Math.sin(a) * (r + 0.12));
-        g.add(col);
-      }
-      topY = h + r + 0.2;
-      halfW = r + 0.1;
-      break;
-    }
-    case "factory": {
-      /* -------- full detail pass: industrial plant -------- */
-      const w = 1.62, d = 1.15, h = 0.92;
+      const w = 1.5, d = 1.15, h = 1.0;
       const baseH = 0.14;
-      const wallMat = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, -0.04), roughness: 0.62, clearcoat: 0.2, envMapIntensity: 0.85 });
-      const steel = new THREE.MeshStandardMaterial({ color: "#9aa1a9", roughness: 0.35, metalness: 0.85, envMapIntensity: 1.2 });
-      const dark = new THREE.MeshStandardMaterial({ color: "#3a3f45", roughness: 0.5, metalness: 0.5, envMapIntensity: 1.0 });
-      const concrete = new THREE.MeshStandardMaterial({ color: "#b9b4a8", roughness: 0.95 });
-      const smokeMat = new THREE.MeshStandardMaterial({ color: "#d9dde2", roughness: 1, transparent: true, opacity: 0.8 });
-
-      mkBox(w + 0.06, baseH, d + 0.06, baseH / 2, concrete).receiveShadow = true;
-      body = mkBox(w, h, d, baseH + h / 2, wallMat);
-
-      // corrugated banding on the walls
-      for (let b = 1; b <= 3; b++) {
-        const band = mkBox(w + 0.015, 0.015, d + 0.015, baseH + (b * h) / 4, dark);
-        band.castShadow = false;
-        void band;
+      const brick = toon("#b8503a");
+      const stone = toon("#efe6cf");
+      const copper = toon("#5fb39a");
+      box(w + 0.14, baseH, d + 0.12, 0, baseH / 2, 0, stone);
+      body = box(w, h, d, 0, baseH + h / 2, 0, brick);
+      // side wings
+      for (const sx of [-1, 1]) {
+        box(0.46, h - 0.3, 0.86, sx * (w / 2 + 0.04), baseH + (h - 0.3) / 2, -0.06, brick);
+        box(0.52, 0.08, 0.92, sx * (w / 2 + 0.04), baseH + h - 0.26, -0.06, stone);
       }
-
-      // roll-up loading door + frame on the front
-      const dockFrame = mkBox(0.58, 0.66, 0.05, baseH + 0.33, dark);
-      dockFrame.position.z = d / 2 + 0.01;
-      const dockDoor = mkBox(0.5, 0.58, 0.05, baseH + 0.29, steel);
-      dockDoor.position.z = d / 2 + 0.03;
-      for (let s = 0; s < 5; s++) {
-        const slat = mkBox(0.5, 0.012, 0.02, baseH + 0.1 + s * 0.11, dark);
-        slat.position.z = d / 2 + 0.06;
-      }
-      // personnel door + a couple of high windows
-      const pdoor = mkBox(0.22, 0.42, 0.05, baseH + 0.21, dark);
-      pdoor.position.set(0.55, baseH + 0.21, d / 2 + 0.02);
-      for (const wx of [-0.5, -0.2]) {
-        const win = mkBox(0.22, 0.2, 0.04, baseH + h - 0.22, winMat);
-        win.position.set(wx, baseH + h - 0.22, d / 2 + 0.02);
-      }
-
-      // north-light sawtooth roof: opaque slope + glazed vertical face
-      const roofY = baseH + h;
-      for (let i = -1; i <= 1; i++) {
-        const cx2 = i * 0.5;
-        const tooth = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, d * 0.92, 3), roofMat);
-        tooth.rotation.set(Math.PI / 2, 0, Math.PI / 6);
-        tooth.position.set(cx2, roofY + 0.12, 0);
-        tooth.castShadow = true;
-        g.add(tooth);
-        const pane = mkBox(0.34, 0.2, d * 0.9, roofY + 0.2, winMat);
-        pane.position.set(cx2 - 0.12, roofY + 0.2, 0);
-        pane.rotation.z = Math.PI / 6;
-      }
-
-      // two banded smokestacks with puffs
-      for (const ox of [-0.5, -0.18]) {
-        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.0, 14), steel);
-        stack.position.set(ox, roofY + 0.5, -0.32);
-        stack.castShadow = true;
-        g.add(stack);
-        for (const ry of [0.75, 0.95]) {
-          const band = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.02, 8, 16), dark);
-          band.rotation.x = Math.PI / 2;
-          band.position.set(ox, roofY + ry, -0.32);
-          g.add(band);
-        }
-        for (let p2 = 0; p2 < 3; p2++) {
-          const puff = new THREE.Mesh(new THREE.SphereGeometry(0.1 + p2 * 0.04, 10, 10), smokeMat);
-          puff.position.set(ox + 0.05 + p2 * 0.06, roofY + 1.05 + p2 * 0.16, -0.32);
-          g.add(puff);
+      // tall arched windows
+      for (const wx of [-0.5, 0.5]) {
+        for (const off of [-0.12, 0.12]) {
+          const x = wx + off;
+          box(0.13, 0.46, 0.04, x, baseH + 0.5, d / 2 + 0.01, glass, 0.015);
+          const arch = mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.04, 14, 1, false, -Math.PI / 2, Math.PI), glass, x, baseH + 0.73, d / 2 + 0.01);
+          arch.rotation.x = Math.PI / 2;
+          box(0.17, 0.035, 0.05, x, baseH + 0.26, d / 2 + 0.025, stone, 0.01);
         }
       }
-
-      // storage tank beside the shed
-      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.7, 20), steel);
-      tank.position.set(w / 2 - 0.05, baseH + 0.35, -0.1);
-      tank.castShadow = true;
-      g.add(tank);
-      const tankTop = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), steel);
-      tankTop.position.set(w / 2 - 0.05, baseH + 0.7, -0.1);
-      g.add(tankTop);
-      // a pipe running from the tank to the shed
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 10), steel);
-      pipe.rotation.z = Math.PI / 2;
-      pipe.position.set(w / 2 - 0.25, baseH + 0.18, -0.1);
-      g.add(pipe);
-
-      // a roof exhaust fan
-      const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.08, 14), dark);
-      fan.position.set(0.5, roofY + 0.18, 0.25);
-      g.add(fan);
-
-      topY = roofY + 1.3;
+      // portico: steps, columns, entablature, pediment
+      for (let s = 0; s < 3; s++) box(0.72 - s * 0.05, 0.05, 0.14, 0, 0.025 + s * 0.05, d / 2 + 0.3 - s * 0.08, stone, 0.015);
+      for (const cx2 of [-0.24, -0.08, 0.08, 0.24]) {
+        cyl(0.045, 0.05, 0.62, cx2, baseH + 0.31, d / 2 + 0.17, stone, 14);
+        box(0.12, 0.04, 0.12, cx2, baseH + 0.64, d / 2 + 0.17, stone, 0.01);
+      }
+      box(0.72, 0.1, 0.2, 0, baseH + 0.71, d / 2 + 0.17, stone, 0.02);
+      sign("SPRINGFIELD U", 0.6, 0.07, 0, baseH + 0.71, d / 2 + 0.272, { fg: "#8a2f20" });
+      const ped = mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.18, 3), stone, 0, baseH + 0.83, d / 2 + 0.17);
+      ped.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+      ped.scale.set(1, 1, 0.42);
+      box(0.3, 0.42, 0.04, 0, baseH + 0.21, d / 2 + 0.01, toon("#6b3a22"), 0.02);
+      // roof + clock tower + copper dome
+      const roofTop = baseH + h;
+      box(w + 0.08, 0.1, d + 0.08, 0, roofTop + 0.05, 0, stone);
+      const tY = roofTop + 0.42;
+      box(0.46, 0.76, 0.46, 0, tY, -0.05, brick);
+      box(0.52, 0.06, 0.52, 0, tY + 0.4, -0.05, stone);
+      const face = mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 24), white, 0, tY + 0.12, 0.19);
+      face.rotation.x = Math.PI / 2;
+      box(0.015, 0.1, 0.012, 0, tY + 0.16, 0.215, ink, 0.004);
+      box(0.075, 0.015, 0.012, 0.03, tY + 0.12, 0.215, ink, 0.004);
+      for (const cx2 of [-0.15, 0.15]) cyl(0.03, 0.03, 0.26, cx2, tY + 0.56, 0.12, stone, 10);
+      box(0.4, 0.26, 0.36, 0, tY + 0.56, -0.08, brick);
+      mesh(new THREE.SphereGeometry(0.26, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2), copper, 0, tY + 0.7, -0.05);
+      cyl(0.012, 0.012, 0.22, 0, tY + 1.06, -0.05, toon("#f2c14e"), 6);
+      ball(0.04, 0, tY + 1.18, -0.05, toon("#f2c14e"), 10);
+      topY = tY + 1.25;
       halfW = w / 2;
       break;
     }
-    case "zmart": {
-      // wide big-box + pylon sign
-      const w = 1.65, h = 1.0, d = 1.25;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      flatRoof(w, h, d);
-      const pole = mkBox(0.12, 1.0, 0.12, h + 0.3, metal);
-      void pole;
-      const sign = mkBox(0.5, 0.42, 0.08, h + 0.95, bodyMat);
-      (sign.material as THREE.MeshStandardMaterial) = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.25), emissive: shade(loc.accent, -0.1), emissiveIntensity: 0.4 });
-      topY = h + 1.2;
+
+    /* -------- Krusty Burger -------- */
+    case "krusty": {
+      const red = toon("#e0352b");
+      const yellow = toon("#fed90f");
+      const w = 1.2, h = 0.74, d = 1.0;
+      body = box(w, h, d, 0, h / 2, 0, white);
+      box(w + 0.03, 0.15, d + 0.03, 0, 0.075, 0, red);
+      box(w + 0.1, 0.2, d + 0.1, 0, h + 0.08, 0, red);
+      box(w - 0.04, 0.05, d - 0.04, 0, h + 0.2, 0, roofGrey);
+      sign("KRUSTY BURGER", 1.1, 0.15, 0, h + 0.08, d / 2 + 0.056, { fg: "#fed90f", stroke: INK });
+      // big front windows + glass door
+      box(0.66, 0.34, 0.04, -0.16, 0.42, d / 2 + 0.01, glass, 0.02);
+      for (const mx of [-0.38, -0.16, 0.06]) box(0.025, 0.34, 0.05, mx, 0.42, d / 2 + 0.02, white, 0.006);
+      box(0.22, 0.44, 0.04, 0.38, 0.22, d / 2 + 0.01, darkGlass, 0.02);
+      winSide(0.5, 0.3, w / 2, 0.42, 0, white, glass);
+      // drive-thru menu board
+      cyl(0.015, 0.015, 0.3, w / 2 + 0.16, 0.15, 0.25, metal, 6);
+      box(0.06, 0.18, 0.24, w / 2 + 0.16, 0.36, 0.25, red, 0.02);
+      // pole sign with the clown's head
+      const px = -0.56, pz = 0.4;
+      cyl(0.035, 0.04, 1.25, px, 0.62, pz, metal, 10);
+      const headY = 1.45;
+      ball(0.25, px, headY, pz, white, 24);
+      ball(0.065, px, headY - 0.01, pz + 0.25, red, 12);
+      for (const sx of [-1, 1]) {
+        ball(0.075, px + sx * 0.09, headY + 0.08, pz + 0.19, white, 12);
+        ball(0.03, px + sx * 0.085, headY + 0.08, pz + 0.26, ink, 8);
+        ball(0.12, px + sx * 0.25, headY + 0.04, pz - 0.02, toon("#4fae4a"), 12);
+        ball(0.085, px + sx * 0.2, headY + 0.17, pz - 0.04, toon("#4fae4a"), 10);
+      }
+      const smile = mesh(new THREE.TorusGeometry(0.11, 0.028, 8, 18, Math.PI), red, px, headY - 0.09, pz + 0.2);
+      smile.rotation.set(0.35, 0, Math.PI);
+      box(0.2, 0.08, 0.16, px, headY + 0.27, pz, yellow, 0.03);
+      topY = headY + 0.4;
       halfW = w / 2;
       break;
     }
-    case "hitech": {
-      // sleek glass tower
-      const w = 0.92, h = 2.1, d = 0.92;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, glassMat, true);
-      door(d);
-      mkBox(0.7, 0.22, 0.7, h + 0.11, rimMat);
-      const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 8), metal);
-      ant.position.y = h + 0.6;
-      g.add(ant);
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), new THREE.MeshStandardMaterial({ color: "#ff5a6a", emissive: "#ff2a3a", emissiveIntensity: 0.9 }));
-      tip.position.y = h + 1.05;
-      g.add(tip);
-      topY = h + 1.1;
+
+    /* -------- Try-N-Save -------- */
+    case "trynsave": {
+      const wall = toon("#e2e7ee");
+      const w = 1.62, h = 0.86, d = 1.2;
+      body = box(w, h, d, 0, h / 2, 0, wall);
+      box(w + 0.05, 0.26, d + 0.05, 0, h - 0.06, 0, accent);
+      box(w - 0.06, 0.04, d - 0.06, 0, h + 0.08, 0, roofGrey);
+      sign("TRY-N-SAVE", 1.0, 0.2, 0, h - 0.06, d / 2 + 0.03, { bg: "#fed90f", fg: "#e0352b", stroke: INK });
+      // glass entrance + canopy + carts
+      box(0.5, 0.42, 0.04, 0, 0.21, d / 2 + 0.01, darkGlass, 0.02);
+      for (const mx of [-0.12, 0.12]) box(0.02, 0.42, 0.05, mx, 0.21, d / 2 + 0.02, frame, 0.005);
+      box(0.66, 0.05, 0.26, 0, 0.5, d / 2 + 0.13, accent, 0.015);
+      for (const sx of [-0.3, 0.3]) cyl(0.015, 0.015, 0.5, sx, 0.25, d / 2 + 0.24, metal, 6);
+      for (const cx2 of [0.48, 0.6]) {
+        box(0.1, 0.07, 0.14, cx2, 0.09, d / 2 + 0.24, toon("#c9ced6"), 0.01);
+        box(0.01, 0.08, 0.01, cx2, 0.04, d / 2 + 0.3, metal, 0.003);
+      }
+      // SALE banner + side windows
+      box(0.38, 0.2, 0.03, -0.52, 0.3, d / 2 + 0.01, toon("#e0352b"), 0.02);
+      sign("SALE!", 0.34, 0.16, -0.52, 0.3, d / 2 + 0.03, { fg: "#ffffff", stroke: INK });
+      for (const wz of [-0.3, 0.2]) winSide(0.3, 0.2, w / 2, 0.3, wz, frame, glass);
+      // rooftop HVAC
+      for (const [hx, hz] of [[-0.4, -0.25], [0.35, -0.1]] as [number, number][]) {
+        box(0.3, 0.16, 0.26, hx, h + 0.18, hz, metal, 0.03);
+        cyl(0.07, 0.07, 0.03, hx, h + 0.27, hz, ink, 12);
+      }
+      topY = h + 0.35;
       halfW = w / 2;
       break;
     }
-    case "cinema": {
-      // wide hall + marquee + vertical blade sign
-      const w = 1.35, h = 1.2, d = 1.05;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      const marquee = mkBox(w + 0.2, 0.26, 0.4, 0.95, rimMat);
-      void marquee;
-      const strip = mkBox(w + 0.14, 0.12, 0.42, 0.95, new THREE.MeshStandardMaterial({ color: "#ffd36a", emissive: "#ffb21e", emissiveIntensity: 0.8 }));
-      void strip;
-      door(d);
-      flatRoof(w, h, d);
-      const blade = mkBox(0.26, 1.0, 0.1, h + 0.4, new THREE.MeshStandardMaterial({ color: "#2a1540", emissive: "#ff5bd0", emissiveIntensity: 0.6 }));
-      blade.position.x = w / 2;
-      topY = h + 0.9;
+
+    /* -------- Globex Corporation -------- */
+    case "globex": {
+      const teal = toon("#46c2b8", { emissive: "#1d7f78", emissiveIntensity: 0.2 });
+      const band = toon("#f4f4ef");
+      const podH = 0.3;
+      body = box(1.25, podH, 1.05, 0, podH / 2, 0, concrete);
+      box(0.6, 0.24, 0.04, 0, 0.13, 0.535, darkGlass, 0.02);
+      box(1.0, 0.13, 0.03, 0, 0.36, 0.42, toon("#18323a"), 0.02);
+      sign("GLOBEX", 0.6, 0.11, 0, 0.36, 0.44, { fg: "#46c2b8" });
+      // stacked glass floors
+      const floors = 4;
+      const fh = 0.26;
+      for (let i = 0; i < floors; i++) {
+        const y = podH + i * fh;
+        box(0.82, 0.05, 0.74, 0, y + 0.025, -0.08, band, 0.015);
+        box(0.76, fh - 0.05, 0.68, 0, y + 0.05 + (fh - 0.05) / 2, -0.08, teal, 0.02);
+      }
+      const roofY = podH + floors * fh;
+      box(0.86, 0.08, 0.78, 0, roofY + 0.04, -0.08, band, 0.02);
+      // the globe on top
+      cyl(0.04, 0.08, 0.22, 0, roofY + 0.19, -0.08, metal, 10);
+      const gY = roofY + 0.62;
+      ball(0.32, 0, gY, -0.08, toon("#3d8fe0"), 26);
+      for (const [lx, ly, lz, r] of [[0.12, 0.12, 0.26, 0.11], [-0.18, -0.05, 0.22, 0.09], [0.05, -0.18, 0.25, 0.08]] as number[][]) {
+        const land = ball(r, lx, gY + ly, -0.08 + lz, toon("#52b947"), 12);
+        land.scale.set(1, 0.7, 0.35);
+      }
+      const gold = toon("#f2c14e");
+      const ring1 = mesh(new THREE.TorusGeometry(0.4, 0.02, 8, 40), gold, 0, gY, -0.08);
+      ring1.rotation.x = Math.PI / 2 - 0.35;
+      const ring2 = mesh(new THREE.TorusGeometry(0.4, 0.02, 8, 40), gold, 0, gY, -0.08);
+      ring2.rotation.y = 0.5;
+      ring2.userData.spin = true;
+      topY = gY + 0.38;
+      halfW = 0.62;
+      break;
+    }
+
+    /* -------- Aztec Theater -------- */
+    case "aztec": {
+      const terra = toon("#d9783a");
+      const turq = toon("#2bb3a8");
+      const gold = toon("#f2c14e");
+      const w = 1.3, h = 1.0, d = 1.0;
+      body = box(w, h, d, 0, h / 2, -0.04, terra);
+      // stepped (ziggurat) crown on the facade
+      const tiers: [number, THREE.Material][] = [[1.14, turq], [0.84, gold], [0.54, turq], [0.26, gold]];
+      tiers.forEach(([tw, m], i) => box(tw, 0.17, 0.3, 0, h + 0.085 + i * 0.17, 0.3, m, 0.02));
+      // zig-zag trim
+      for (let i = 0; i < 6; i++) {
+        const t = box(0.11, 0.11, 0.03, -0.5 + i * 0.2, h - 0.12, d / 2 - 0.02, gold, 0.01);
+        t.rotation.z = Math.PI / 4;
+      }
+      // marquee with chaser bulbs
+      box(1.2, 0.24, 0.38, 0, 0.62, d / 2 + 0.1, white, 0.03);
+      sign("NOW SHOWING: McBAIN", 1.08, 0.13, 0, 0.64, d / 2 + 0.293, { fg: "#e0352b" });
+      const bulb = glow("#ffd34d");
+      for (let i = 0; i < 11; i++) ball(0.022, -0.55 + i * 0.11, 0.49, d / 2 + 0.3, bulb, 8);
+      // vertical blade sign
+      box(0.2, 0.92, 0.07, w / 2 - 0.1, h + 0.12, d / 2 + 0.04, turq, 0.03);
+      sign("AZTEC", 0.16, 0.86, w / 2 - 0.1, h + 0.12, d / 2 + 0.08, { fg: "#fed90f", stroke: INK, vertical: true });
+      // doors + posters
+      for (const dx of [-0.16, 0, 0.16]) box(0.13, 0.38, 0.04, dx, 0.19, d / 2 - 0.02, darkGlass, 0.015);
+      box(0.18, 0.28, 0.03, -0.46, 0.24, d / 2 - 0.02, toon("#3d8fe0"), 0.015);
+      box(0.18, 0.28, 0.03, 0.46, 0.24, d / 2 - 0.02, toon("#e0352b"), 0.015);
+      topY = h + 0.75;
       halfW = w / 2;
       break;
     }
-    case "club": {
-      // hexagonal club + disco ball
-      const r = 0.72, h = 1.3;
-      body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 6), bodyMat);
-      body.position.y = h / 2;
-      body.rotation.y = Math.PI / 6;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      g.add(body);
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.03, r + 0.03, 0.14, 6), new THREE.MeshStandardMaterial({ color: "#e879f9", emissive: "#d019d0", emissiveIntensity: 0.7 }));
-      band.rotation.y = Math.PI / 6;
-      band.position.y = h * 0.7;
-      g.add(band);
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), metal);
-      pole.position.y = h + 0.25;
-      g.add(pole);
-      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), new THREE.MeshStandardMaterial({ color: "#cdd6e2", roughness: 0.15, metalness: 0.95, flatShading: true }));
-      ball.position.y = h + 0.65;
-      ball.userData.spin = true;
-      g.add(ball);
-      topY = h + 0.9;
-      halfW = r;
-      break;
-    }
-    case "gym": {
-      /* -------- full detail pass: a modern glass-fronted fitness centre -------- */
-      const w = 1.55, d = 1.22;
-      const baseH = 0.2; // concrete plinth
-      const mainH = 1.08; // main storey
-      const topOfWall = baseH + mainH; // 1.28
 
-      // extra materials (local to the gym)
-      const concrete = new THREE.MeshStandardMaterial({ color: "#c7c2b6", roughness: 0.92, envMapIntensity: 0.5 });
-      const wallMat = new THREE.MeshPhysicalMaterial({ color: shade(loc.accent, -0.04), roughness: 0.5, clearcoat: 0.4, envMapIntensity: 1.0 });
-      const mullion = new THREE.MeshStandardMaterial({ color: "#23272e", roughness: 0.4, metalness: 0.5, envMapIntensity: 1.0 });
-      const glassG = new THREE.MeshPhysicalMaterial({ color: "#b9e0f2", roughness: 0.04, metalness: 0, clearcoat: 1, transmission: 0.35, transparent: true, opacity: 0.86, envMapIntensity: 1.6 });
-      const interior = new THREE.MeshStandardMaterial({ color: "#ffd89a", emissive: "#ffb84d", emissiveIntensity: 0.55, roughness: 0.8 });
-      const trimMat = new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.22), roughness: 0.4, metalness: 0.3, envMapIntensity: 1.1 });
-
-      // concrete plinth
-      const plinth = mkBox(w + 0.06, baseH, d + 0.06, baseH / 2, concrete);
-      plinth.receiveShadow = true;
-
-      // main solid shell (side/back walls); front will be mostly glazed
-      body = mkBox(w, mainH, d, baseH + mainH / 2, wallMat);
-
-      // warm interior volume (shows through the glazing)
-      mkBox(w - 0.3, mainH - 0.2, d - 0.3, baseH + mainH / 2, interior);
-
-      // ---- full-height glazed front (curtain wall) on +Z ----
-      const glassW = w - 0.18;
-      const glassH = mainH - 0.16;
-      const glassCY = baseH + 0.04 + glassH / 2;
-      const zf = d / 2 + 0.005;
-      // recessed dark frame
-      const gf = mkBox(glassW + 0.06, glassH + 0.06, 0.05, glassCY, mullion);
-      gf.position.z = zf - 0.02;
-      // the glass
-      const glass = mkBox(glassW, glassH, 0.04, glassCY, glassG);
-      glass.position.z = zf + 0.02;
-      glass.castShadow = false;
-      // mullions: verticals + horizontals
-      for (let i = 1; i < 5; i++) {
-        const mx = -glassW / 2 + (i * glassW) / 5;
-        const v = mkBox(0.035, glassH, 0.06, glassCY, mullion);
-        v.position.set(mx, glassCY, zf + 0.03);
-      }
-      for (let j = 1; j < 3; j++) {
-        const my = glassCY - glassH / 2 + (j * glassH) / 3;
-        const hbar = mkBox(glassW, 0.035, 0.06, my, mullion);
-        hbar.position.z = zf + 0.03;
-      }
-
-      // ---- entrance: recessed double glass doors + cantilevered canopy ----
-      const doorMat2 = new THREE.MeshPhysicalMaterial({ color: "#cfeefc", roughness: 0.05, metalness: 0.1, clearcoat: 1, transmission: 0.3, transparent: true, opacity: 0.9, envMapIntensity: 1.5 });
-      for (const dx of [-0.11, 0.11]) {
-        const dr = mkBox(0.2, 0.62, 0.04, baseH + 0.31, doorMat2);
-        dr.position.set(dx, baseH + 0.31, zf + 0.05);
-        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.18, 8), metal);
-        handle.position.set(dx + (dx < 0 ? 0.06 : -0.06), baseH + 0.31, zf + 0.09);
-        g.add(handle);
-      }
-      // canopy slab
-      const canopy = mkBox(0.74, 0.05, 0.42, baseH + 0.7, trimMat);
-      canopy.position.z = d / 2 + 0.18;
-      // canopy supports
-      for (const sx of [-0.32, 0.32]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 10), metal);
-        post.position.set(sx, baseH + 0.35, d / 2 + 0.36);
-        g.add(post);
-      }
-      // entrance steps
-      for (let s = 0; s < 3; s++) {
-        const step = mkBox(0.8 - s * 0.04, 0.05, 0.12, 0.025 + s * 0.05, concrete);
-        step.position.z = d / 2 + 0.3 - s * 0.1;
-      }
-
-      // ---- roofline trim + parapet ----
-      const trim = mkBox(w + 0.1, 0.07, d + 0.1, topOfWall + 0.02, trimMat);
-      void trim;
-      const parapet = mkBox(w + 0.04, 0.14, d + 0.04, topOfWall + 0.12, wallMat);
-      void parapet;
-
-      // ---- rooftop HVAC units, vent, railing ----
-      const hvacMat = new THREE.MeshStandardMaterial({ color: "#9fa6ad", roughness: 0.6, metalness: 0.4, envMapIntensity: 1.0 });
-      for (const [hx, hz] of [[-0.35, -0.2], [0.25, 0.1]] as [number, number][]) {
-        const unit = mkBox(0.34, 0.2, 0.3, topOfWall + 0.22, hvacMat);
-        unit.position.x = hx;
-        unit.position.z = hz;
-        // grille slats
-        for (let k = 0; k < 3; k++) {
-          const slat = mkBox(0.28, 0.015, 0.02, topOfWall + 0.16 + k * 0.05, mullion);
-          slat.position.set(hx, topOfWall + 0.16 + k * 0.05, hz + 0.15);
-        }
-      }
-      const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.22, 12), hvacMat);
-      vent.position.set(0.45, topOfWall + 0.23, -0.3);
-      g.add(vent);
-      // thin roof railing along the front edge
-      const rail = mkBox(w - 0.1, 0.02, 0.02, topOfWall + 0.34, metal);
-      rail.position.z = d / 2 - 0.05;
-      for (let i = 0; i <= 5; i++) {
-        const postx = -w / 2 + 0.08 + (i * (w - 0.16)) / 5;
-        const rp = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.22, 6), metal);
-        rp.position.set(postx, topOfWall + 0.23, d / 2 - 0.05);
-        g.add(rp);
-      }
-
-      // ---- sign pylon with a 3D dumbbell emblem ----
-      const pyPole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 12), metal);
-      pyPole.position.set(w / 2 + 0.02, 0.5, d / 2 - 0.1);
-      g.add(pyPole);
-      const panel = mkBox(0.42, 0.42, 0.07, 1.15, new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.1), emissive: shade(loc.accent, -0.1), emissiveIntensity: 0.4, roughness: 0.5 }));
-      panel.position.x = w / 2 + 0.02;
-      // dumbbell on the panel
-      const dbBar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.26, 10), metal);
-      dbBar.rotation.z = Math.PI / 2;
-      dbBar.position.set(w / 2 + 0.02, 1.15, 0.12);
-      g.add(dbBar);
-      for (const ex of [-0.13, 0.13]) {
-        const weight = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.08, 14), new THREE.MeshStandardMaterial({ color: "#2b2f36", roughness: 0.4, metalness: 0.5 }));
-        weight.rotation.z = Math.PI / 2;
-        weight.position.set(w / 2 + 0.02 + ex, 1.15, 0.12);
-        g.add(weight);
-      }
-
-      topY = topOfWall + 0.45;
-      halfW = w / 2;
-      break;
-    }
-    case "cafe": {
-      const w = 0.98, h = 1.0, d = 0.98;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      // slanted striped awning over the door
-      const awn = mkBox(w + 0.1, 0.06, 0.4, 0.78, new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.2) }));
-      awn.position.z = d / 2 + 0.16;
-      awn.rotation.x = -0.5;
-      flatRoof(w, h, d);
-      // umbrella beside
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6), metal);
-      pole.position.set(w / 2 + 0.25, 0.25, d / 2 + 0.2);
-      g.add(pole);
-      const top = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.22, 10), new THREE.MeshStandardMaterial({ color: "#d9534f" }));
-      top.position.set(w / 2 + 0.25, 0.6, d / 2 + 0.2);
-      g.add(top);
-      topY = h + 0.2;
-      halfW = w / 2;
-      break;
-    }
-    case "grocery": {
-      const w = 1.2, h = 1.0, d = 1.05;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      flatRoof(w, h, d);
-      const canopy = mkBox(w + 0.2, 0.08, 0.42, 0.82, new THREE.MeshStandardMaterial({ color: shade(loc.accent, 0.22) }));
-      canopy.position.z = d / 2 + 0.16;
-      // produce crates
-      for (const ox of [-0.3, 0.1]) {
-        const crate = mkBox(0.22, 0.2, 0.22, 0.1, new THREE.MeshStandardMaterial({ color: "#9a6b3f" }));
-        crate.position.set(ox, 0.1, d / 2 + 0.28);
-      }
-      topY = h + 0.2;
-      halfW = w / 2;
-      break;
-    }
-    case "burger": {
-      const w = 1.15, h = 0.9, d = 1.15;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      flatRoof(w, h, d);
-      const arch = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 10, 20, Math.PI), gold);
-      arch.position.y = h + 0.34;
-      g.add(arch);
+    /* -------- Moe's Tavern -------- */
+    case "moes": {
+      const brick = toon("#a65a3c");
+      const trim = toon("#5a2e1e");
+      const w = 1.02, h = 0.78, d = 0.92;
+      body = box(w, h, d, 0, h / 2, 0, brick);
+      box(w + 0.02, 0.1, d + 0.02, 0, 0.05, 0, trim);
+      box(w + 0.06, 0.1, d + 0.06, 0, h + 0.05, 0, trim);
+      winSide(0.16, 0.16, w / 2, 0.45, -0.15, trim, toon("#e9dca0", { emissive: "#c9a64a", emissiveIntensity: 0.4 }));
+      // the door + tiny frosted window
+      box(0.24, 0.44, 0.04, -0.12, 0.22, d / 2 + 0.01, toon("#2f5d3a"), 0.02);
+      ball(0.018, -0.04, 0.22, d / 2 + 0.04, toon("#f2c14e"), 8);
+      box(0.22, 0.16, 0.04, 0.26, 0.4, d / 2 + 0.01, toon("#e9dca0", { emissive: "#c9a64a", emissiveIntensity: 0.4 }), 0.015);
+      box(0.13, 0.13, 0.02, 0.26, 0.4, d / 2 + 0.035, white, 0.06);
+      sign("DUFF", 0.12, 0.06, 0.26, 0.4, d / 2 + 0.047, { fg: "#e0352b" });
+      // neon sign over the door
+      box(0.62, 0.17, 0.05, 0, 0.6, d / 2 + 0.02, toon("#2a1a12"), 0.02);
+      sign("MOE'S", 0.56, 0.14, 0, 0.6, d / 2 + 0.05, { fg: "#ff5a5a", stroke: "#ffe3e3" });
+      // rooftop sign on posts
+      for (const sx of [-0.25, 0.25]) cyl(0.015, 0.015, 0.3, sx, h + 0.24, -0.05, metal, 6);
+      box(0.72, 0.24, 0.05, 0, h + 0.46, -0.05, toon("#2a1a12"), 0.02);
+      sign("MOE'S TAVERN", 0.66, 0.18, 0, h + 0.46, -0.02, { fg: "#ff7a3a", stroke: "#3a1408" });
+      // trash cans by the side
+      cyl(0.07, 0.065, 0.16, w / 2 + 0.12, 0.08, 0.25, metal, 12);
+      cyl(0.075, 0.075, 0.02, w / 2 + 0.12, 0.17, 0.25, metal, 12);
       topY = h + 0.6;
       halfW = w / 2;
       break;
     }
-    default: {
-      const w = 1.2, h = 1.4, d = 1.2;
-      body = mkBox(w, h, d, h / 2);
-      addWindows(g, w, h, d, winMat);
-      door(d);
-      flatRoof(w, h, d);
-      topY = h + 0.2;
+
+    /* -------- Bowl-A-Rama -------- */
+    case "bowlarama": {
+      const wall = toon("#f6b3d1");
+      const teal = toon("#2bb3a8");
+      const w = 1.38, h = 0.72, d = 1.02;
+      body = box(w, h, d, 0, h / 2, 0, wall);
+      // googie roof: a tilted slab
+      const roof = box(w + 0.24, 0.07, d + 0.18, 0, h + 0.1, 0, teal, 0.02);
+      roof.rotation.z = -0.1;
+      box(w + 0.02, 0.06, d + 0.02, 0, h, 0, white, 0.02);
+      // facade lettering
+      box(1.06, 0.18, 0.04, 0, 0.56, d / 2 + 0.01, white, 0.04);
+      sign("BOWL-A-RAMA", 1.0, 0.15, 0, 0.56, d / 2 + 0.035, { fg: "#d94f9a", stroke: INK });
+      box(0.3, 0.38, 0.04, -0.3, 0.19, d / 2 + 0.01, darkGlass, 0.02);
+      for (const wx of [0.12, 0.42]) win(0.2, 0.2, wx, 0.27, d / 2, frame, glass);
+      // giant pin + ball on the roof
+      const pinPts = [
+        [0, 0], [0.09, 0], [0.13, 0.12], [0.15, 0.27], [0.12, 0.44], [0.068, 0.58],
+        [0.064, 0.66], [0.088, 0.77], [0.08, 0.86], [0.04, 0.92], [0, 0.93],
+      ].map(([x, y]) => new THREE.Vector2(x * 1.35, y * 1.1));
+      const py = h + 0.12;
+      mesh(new THREE.LatheGeometry(pinPts, 22), white, 0.18, py, -0.05);
+      for (const sy of [0.66, 0.74]) {
+        const stripe = mesh(new THREE.TorusGeometry(0.093, 0.016, 8, 22), toon("#e0352b"), 0.18, py + sy * 1.1 - 0.02, -0.05);
+        stripe.rotation.x = Math.PI / 2;
+      }
+      ball(0.2, -0.3, py + 0.16, 0.02, toon("#3049a8"), 22);
+      for (const [fx, fy] of [[-0.05, 0.05], [0.04, 0.06], [0, -0.04]]) ball(0.026, -0.3 + fx, py + 0.16 + fy, 0.21, ink, 8);
+      topY = py + 1.05;
       halfW = w / 2;
+      break;
+    }
+
+    /* -------- Kwik-E-Mart -------- */
+    case "kwikemart": {
+      const wall = toon("#f1e3bf");
+      const brick = toon("#c46a3c");
+      const green = toon("#2fa35a");
+      const orange = toon("#f08a24");
+      const w = 1.3, h = 0.68, d = 1.0;
+      body = box(w, h, d, 0, h / 2, 0, wall);
+      box(w + 0.02, 0.16, d + 0.02, 0, 0.08, 0, brick);
+      // the iconic sloped fascia, with an orange stripe
+      mansard(w + 0.26, d + 0.24, 0.34, 0, h - 0.02, 0, green, 0.86);
+      mansard(w + 0.28, d + 0.26, 0.06, 0, h - 0.02, 0, orange, 0.97);
+      box(w - 0.04, 0.05, d - 0.06, 0, h + 0.32, 0, roofGrey);
+      // sign on the fascia
+      const sgn = sign("KWIK-E-MART", 1.1, 0.2, 0, h + 0.16, d / 2 + 0.1, { bg: "#fffdf3", fg: "#e0352b", stroke: "#fffdf3" });
+      sgn.rotation.x = -0.35;
+      // big windows with posters, glass door
+      box(0.7, 0.32, 0.04, -0.18, 0.4, d / 2 + 0.01, glass, 0.02);
+      for (const mx of [-0.4, -0.18, 0.04]) box(0.02, 0.32, 0.05, mx, 0.4, d / 2 + 0.02, frame, 0.005);
+      box(0.13, 0.17, 0.02, -0.3, 0.42, d / 2 + 0.04, toon("#f6a5c0"), 0.01);
+      box(0.13, 0.17, 0.02, -0.07, 0.42, d / 2 + 0.04, toon("#7cc4f2"), 0.01);
+      box(0.22, 0.44, 0.04, 0.4, 0.22, d / 2 + 0.01, darkGlass, 0.02);
+      // ice chest + Squishee drum out front
+      box(0.26, 0.2, 0.14, -0.38, 0.1, d / 2 + 0.14, white, 0.02);
+      sign("ICE", 0.18, 0.08, -0.38, 0.12, d / 2 + 0.215, { fg: "#2f6fd6" });
+      cyl(0.07, 0.07, 0.18, 0.2, 0.09, d / 2 + 0.16, toon("#e0352b"), 12);
+      ball(0.075, 0.2, 0.2, d / 2 + 0.16, toon("#7fd3f7"), 12);
+      topY = h + 0.55;
+      halfW = w / 2;
+      break;
+    }
+
+    /* -------- Lard Lad Donuts -------- */
+    case "lardlad": {
+      const wall = toon("#f7c2d8");
+      const pink = toon("#ef5fa7");
+      const w = 0.98, h = 0.7, d = 0.86;
+      const sx0 = -0.22;
+      body = box(w, h, d, sx0, h / 2, 0, wall);
+      box(w + 0.08, 0.12, d + 0.08, sx0, h + 0.06, 0, pink);
+      sign("LARD LAD DONUTS", 0.94, 0.11, sx0, h + 0.06, d / 2 + 0.042, { fg: "#ffffff", stroke: INK });
+      // striped awning
+      for (let i = 0; i < 6; i++) {
+        const s = box(0.16, 0.035, 0.22, sx0 - 0.4 + i * 0.16, 0.52, d / 2 + 0.1, i % 2 ? white : pink, 0.01);
+        s.rotation.x = 0.35;
+      }
+      box(0.46, 0.3, 0.04, sx0 - 0.15, 0.3, d / 2 + 0.01, glass, 0.02);
+      box(0.2, 0.42, 0.04, sx0 + 0.3, 0.21, d / 2 + 0.01, darkGlass, 0.02);
+      // the statue: a giant donut held high
+      const lx = 0.5, lz = 0.2;
+      box(0.32, 0.12, 0.3, lx, 0.06, lz, concrete, 0.02);
+      const overalls = toon("#e04646");
+      const shirt = toon("#fbfaf4");
+      for (const s of [-0.05, 0.05]) cyl(0.04, 0.045, 0.3, lx + s, 0.27, lz, overalls, 10);
+      box(0.22, 0.26, 0.16, lx, 0.53, lz, overalls, 0.05);
+      box(0.18, 0.1, 0.17, lx, 0.62, lz, shirt, 0.04);
+      mesh(new THREE.CapsuleGeometry(0.09, 0.08, 4, 14), toon(SKIN), lx, 0.8, lz);
+      for (const s of [-1, 1]) {
+        ball(0.04, lx + s * 0.035, 0.82, lz + 0.085, white, 10);
+        ball(0.014, lx + s * 0.035, 0.82, lz + 0.12, ink, 6);
+      }
+      const quiff = ball(0.09, lx, 0.92, lz + 0.02, toon("#6b3f1f"), 12);
+      quiff.scale.set(1.1, 0.6, 1.2);
+      const arm = cyl(0.035, 0.035, 0.42, lx + 0.12, 0.84, lz, shirt, 8);
+      arm.rotation.z = -0.3;
+      cyl(0.035, 0.035, 0.24, lx - 0.13, 0.48, lz + 0.04, shirt, 8).rotation.z = 0.25;
+      const dY = 1.15;
+      mesh(new THREE.TorusGeometry(0.17, 0.08, 14, 28), toon("#d9a35c"), lx + 0.2, dY, lz);
+      const icing = mesh(new THREE.TorusGeometry(0.17, 0.07, 14, 28), pink, lx + 0.2, dY, lz + 0.025);
+      icing.scale.set(1, 1, 0.7);
+      const sprinkleCols = ["#fed90f", "#7cc4f2", "#52b947", "#ffffff", "#e0352b"];
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const r = 0.17 + (i % 2 ? 0.035 : -0.03);
+        const sp = box(0.035, 0.012, 0.012, lx + 0.2 + Math.cos(a) * r, dY + Math.sin(a) * r, lz + 0.085, toon(sprinkleCols[i % 5]), 0.004);
+        sp.rotation.z = a * 1.7;
+      }
+      topY = dY + 0.3;
+      halfW = 0.6;
+      break;
+    }
+
+    /* -------- Springfield Nuclear Power Plant -------- */
+    case "plant": {
+      const tower = toon("#cfccc3", { side: THREE.DoubleSide });
+      const reactor = toon("#a9b6c2");
+      const steam = toon("#ffffff", { transparent: true, opacity: 0.9 });
+      const goo = glow("#8cff3a");
+      // cooling towers (hyperboloids)
+      const prof = [[0.4, 0], [0.33, 0.4], [0.27, 0.82], [0.28, 1.05], [0.31, 1.3]].map(([x, y]) => new THREE.Vector2(x, y));
+      for (const [tx, tz] of [[-0.42, -0.18], [0.2, -0.3]]) {
+        mesh(new THREE.LatheGeometry(prof, 26), tower, tx, 0, tz);
+        const stripe = mesh(new THREE.TorusGeometry(0.29, 0.02, 6, 26), toon("#b0ada4"), tx, 1.18, tz);
+        stripe.rotation.x = Math.PI / 2;
+        for (let i = 0; i < 3; i++) {
+          const puff = ball(0.17 + i * 0.05, tx + 0.04 * i, 1.42 + i * 0.17, tz, steam, 14);
+          puff.userData.puff = i;
+        }
+      }
+      // reactor building with dome
+      body = box(0.72, 0.5, 0.55, 0.45, 0.25, 0.25, reactor);
+      ball(0.22, 0.45, 0.5, 0.2, toon("#d9dde2"), 20).scale.set(1, 0.8, 1);
+      box(0.18, 0.3, 0.04, 0.45, 0.15, 0.53, toon("#2f5d3a"), 0.02);
+      sign("SECTOR 7-G", 0.34, 0.07, 0.45, 0.38, 0.535, { fg: INK });
+      // the front sign wall
+      box(1.2, 0.2, 0.08, -0.15, 0.1, 0.6, concrete, 0.02);
+      sign("SPRINGFIELD NUCLEAR POWER PLANT", 1.14, 0.12, -0.15, 0.12, 0.645, { fg: "#2b2723" });
+      // leaky barrels
+      for (const [bx, bz] of [[-0.75, 0.42], [-0.62, 0.5]]) {
+        cyl(0.07, 0.07, 0.17, bx, 0.085, bz, toon("#f2c14e"), 12);
+        cyl(0.06, 0.06, 0.012, bx, 0.175, bz, goo, 12);
+      }
+      const puddle = cyl(0.12, 0.12, 0.008, -0.66, 0.006, 0.6, goo, 16);
+      puddle.scale.z = 0.5;
+      topY = 1.75;
+      halfW = 0.7;
+      break;
+    }
+
+    /* -------- First Bank of Springfield -------- */
+    case "bank": {
+      const stone = toon("#ece4cf");
+      const green = toon("#4fa37a");
+      const w = 1.25, h = 0.9, d = 0.95;
+      for (let s = 0; s < 3; s++) box(w + 0.2 - s * 0.06, 0.05, d + 0.2 - s * 0.06, 0, 0.025 + s * 0.05, 0, stone, 0.015);
+      body = box(w, h, d, 0, 0.15 + h / 2, -0.04, stone);
+      // portico columns
+      for (const cx2 of [-0.42, -0.14, 0.14, 0.42]) {
+        cyl(0.055, 0.06, 0.7, cx2, 0.5, d / 2 + 0.06, white, 14);
+        box(0.14, 0.04, 0.14, cx2, 0.87, d / 2 + 0.06, white, 0.01);
+      }
+      box(w + 0.06, 0.16, 0.22, 0, 0.97, d / 2 + 0.03, stone, 0.02);
+      sign("FIRST BANK OF SPRINGFIELD", 1.1, 0.1, 0, 0.97, d / 2 + 0.145, { fg: "#2e6b4a" });
+      const ped = mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.2, 3), stone, 0, 1.17, d / 2 - 0.02);
+      ped.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+      ped.scale.set(1, 1, 0.3);
+      // gold $ medallion in the pediment
+      const medal = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.03, 20), toon("#f2c14e"), 0, 1.16, d / 2 + 0.09);
+      medal.rotation.x = Math.PI / 2;
+      sign("$", 0.12, 0.12, 0, 1.16, d / 2 + 0.106, { fg: "#8a6a00" });
+      // green copper roof
+      box(w + 0.04, 0.1, d - 0.1, 0, 0.15 + h + 0.05, -0.1, green, 0.02);
+      hipRoof(w - 0.1, d - 0.25, 0.22, 0, 0.15 + h + 0.1, -0.12, green);
+      // bronze doors + windows
+      box(0.22, 0.42, 0.04, 0, 0.36, d / 2 - 0.08, toon("#a8743a"), 0.02);
+      for (const wx of [-0.28, 0.28]) win(0.14, 0.28, wx, 0.5, d / 2 - 0.1, frame, glass);
+      topY = 1.55;
+      halfW = w / 2;
+      break;
+    }
+
+    default: {
+      body = box(1, 1, 1, 0, 0.5, 0, accent);
     }
   }
 
   body.userData.locId = loc.id;
 
   const label = makeLabel(loc.short);
-  label.position.set(0, topY + 0.5, 0);
+  label.position.set(0, topY + 0.45, 0);
   g.add(label);
 
   return { group: g, body, topY, halfW };
 }
 
+/** The Flanders place next door: tidy, beige, white picket fence. */
+function buildFlandersHouse() {
+  const g = new THREE.Group();
+  const { box, hipRoof, win, cyl, ball } = kit(g);
+  const wall = toon("#e2d3a6");
+  const roof = toon("#6f8f4a");
+  const frame = toon("#fbfaf4");
+  const glass = toon("#8fd3f4", { emissive: "#3c8fc2", emissiveIntensity: 0.25 });
+  const w = 1.15, h = 0.62, d = 0.86;
+  box(w, h, d, 0, h / 2, -0.05, wall);
+  hipRoof(w + 0.16, d + 0.16, 0.36, 0, h, -0.05, roof);
+  box(0.22, 0.42, 0.04, 0, 0.21, d / 2 - 0.04, toon("#5a8f3a"), 0.02);
+  for (const wx of [-0.36, 0.36]) win(0.24, 0.2, wx, 0.34, d / 2 - 0.05, frame, glass);
+  // white picket fence
+  for (let i = 0; i < 13; i++) {
+    const x = -0.75 + i * 0.125;
+    if (Math.abs(x) < 0.14) continue;
+    box(0.04, 0.16, 0.02, x, 0.08, d / 2 + 0.24, frame, 0.01);
+  }
+  for (const y of [0.05, 0.12]) {
+    box(0.6, 0.02, 0.015, -0.47, y, d / 2 + 0.23, frame, 0.004);
+    box(0.6, 0.02, 0.015, 0.47, y, d / 2 + 0.23, frame, 0.004);
+  }
+  // a neat little tree
+  cyl(0.04, 0.05, 0.3, 0.7, 0.15, -0.3, toon("#7a4a2a"), 8);
+  ball(0.2, 0.7, 0.45, -0.3, toon("#52b947"), 14);
+  const label = makeLabel("Flanders", 0.8);
+  label.position.set(0, h + 0.75, 0);
+  g.add(label);
+  return g;
+}
+
+/* ---- character tokens ------------------------------------------------------ */
+type HairStyle = "bald" | "beehive" | "spikes" | "star" | "cap" | "curly";
+interface FigureLook {
+  shirt: string;
+  pants: string;
+  hair: HairStyle;
+  hairColor?: string;
+  glasses?: boolean;
+  mustache?: boolean;
+  collar?: string;
+}
+
+const TOKEN_LOOK: Record<string, Omit<FigureLook, "shirt">> = {
+  p0: { hair: "bald", pants: "#3b6fb6" },
+  p1: { hair: "beehive", hairColor: "#2f63d6", pants: "#45a84e" },
+  p2: { hair: "spikes", pants: "#2f63d6" },
+  p3: { hair: "star", pants: "#e8432a" },
+  p4: { hair: "cap", hairColor: "#2e5bd6", pants: "#3b4f8f", glasses: true },
+  p5: { hair: "cap", hairColor: "#55524d", pants: "#3a3a3a" },
+  p6: { hair: "curly", hairColor: "#9c8fc0", pants: "#5d6e98" },
+  p7: { hair: "cap", hairColor: "#6b3f1f", pants: "#4a4a5a" },
+};
+
+const NED_LOOK: FigureLook = {
+  shirt: "#3f9142",
+  pants: "#6d6f78",
+  hair: "cap",
+  hairColor: "#7a4a22",
+  glasses: true,
+  mustache: true,
+  collar: "#f4a7c4",
+};
+
+/** A chunky cartoon townsperson game piece (~1 unit tall). */
+function makeFigure(look: FigureLook, ringColor: string) {
+  const f = new THREE.Group();
+  const skin = toon(SKIN);
+  const shirt = toon(look.shirt);
+  const pants = toon(look.pants);
+  const ink = toon("#2b2723");
+  const white = toon("#ffffff");
+  const hairMat = toon(look.hairColor ?? "#5a3a1e");
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    f.add(m);
+    return m;
+  };
+
+  // base ring so the piece reads on the board
+  const base = add(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 28), toon(ringColor), 0, 0.025, 0);
+  base.receiveShadow = true;
+
+  for (const sx of [-0.065, 0.065]) {
+    add(rb(0.1, 0.06, 0.16, 0.025), ink, sx, 0.08, 0.025);
+    add(new THREE.CylinderGeometry(0.045, 0.045, 0.24, 10), pants, sx, 0.22, 0);
+  }
+  add(new THREE.CylinderGeometry(0.12, 0.14, 0.3, 16), shirt, 0, 0.48, 0);
+  add(new THREE.SphereGeometry(0.12, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), shirt, 0, 0.62, 0).scale.y = 0.4;
+  if (look.collar) add(new THREE.ConeGeometry(0.05, 0.08, 3), toon(look.collar), 0, 0.6, 0.1).rotation.x = Math.PI;
+  for (const sx of [-1, 1]) {
+    const arm = add(new THREE.CylinderGeometry(0.035, 0.035, 0.26, 8), shirt, sx * 0.16, 0.49, 0);
+    arm.rotation.z = sx * 0.22;
+    add(new THREE.SphereGeometry(0.04, 10, 8), skin, sx * 0.19, 0.35, 0);
+  }
+
+  // tall cartoon head + big eyes + nose
+  add(new THREE.CapsuleGeometry(0.115, 0.17, 6, 18), skin, 0, 0.84, 0);
+  for (const sx of [-1, 1]) {
+    add(new THREE.SphereGeometry(0.055, 14, 10), white, sx * 0.05, 0.88, 0.09);
+    add(new THREE.SphereGeometry(0.017, 8, 6), ink, sx * 0.05, 0.88, 0.143);
+  }
+  add(new THREE.CapsuleGeometry(0.024, 0.05, 4, 8), skin, 0, 0.82, 0.13).rotation.x = Math.PI / 2;
+  if (look.glasses) {
+    for (const sx of [-1, 1]) add(new THREE.TorusGeometry(0.062, 0.011, 6, 16), ink, sx * 0.05, 0.88, 0.1);
+  }
+  if (look.mustache) add(rb(0.12, 0.03, 0.03, 0.012), hairMat, 0, 0.77, 0.12);
+
+  // hair
+  switch (look.hair) {
+    case "bald":
+      for (const sx of [-0.025, 0.025]) {
+        const h = add(new THREE.TorusGeometry(0.035, 0.006, 4, 12, Math.PI), ink, sx, 1.02, 0);
+        h.rotation.y = Math.PI / 2;
+      }
+      break;
+    case "beehive":
+      add(new THREE.CapsuleGeometry(0.12, 0.3, 6, 16), hairMat, 0, 1.18, -0.01);
+      break;
+    case "spikes":
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        const s = add(new THREE.ConeGeometry(0.035, 0.1, 6), skin, Math.cos(a) * 0.085, 1.04, Math.sin(a) * 0.085);
+        s.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25);
+      }
+      break;
+    case "star":
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const s = add(new THREE.ConeGeometry(0.035, 0.12, 6), skin, Math.cos(a) * 0.11, 1.0, Math.sin(a) * 0.11);
+        s.rotation.set(Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9);
+      }
+      break;
+    case "cap":
+      add(new THREE.SphereGeometry(0.122, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2.2), hairMat, 0, 0.93, -0.005);
+      break;
+    case "curly":
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        add(new THREE.SphereGeometry(0.06, 10, 8), hairMat, Math.cos(a) * 0.08, 1.0, Math.sin(a) * 0.08);
+      }
+      add(new THREE.SphereGeometry(0.07, 10, 8), hairMat, 0, 1.06, 0);
+      break;
+  }
+  return f;
+}
+
+/* ---- scene ---------------------------------------------------------------- */
 interface Api {
   dispose: () => void;
-  sync: (locId: LocationId) => void;
+  sync: (s: GameState) => void;
 }
 
 function initScene(
@@ -657,36 +931,29 @@ function initScene(
   deps: { dispatch: (a: any) => void; onEnter: () => (id: LocationId) => void; getState: () => GameState }
 ): Api {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#171119");
+  scene.background = new THREE.Color("#7cc6f0");
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   mount.appendChild(renderer.domElement);
-
-  // image-based lighting for soft, realistic reflections
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environment = envTex;
-  pmrem.dispose();
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.display = "block";
 
-  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-  camera.position.set(0, 8.6, 9.6);
-  camera.lookAt(0, 0.2, 0);
+  const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultColor: [0.11, 0.1, 0.09], defaultAlpha: 1 });
 
-  // lights
-  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x3a2c1a, 0.55));
-  const amb = new THREE.AmbientLight(0xffffff, 0.25);
-  scene.add(amb);
-  const sun = new THREE.DirectionalLight(0xfff4de, 1.25);
-  sun.position.set(6, 11, 5);
+  const camera = new THREE.PerspectiveCamera(41, 1, 0.1, 100);
+  camera.position.set(0, 10.2, 8.3);
+  camera.lookAt(0, 0.5, -0.35);
+
+  // lights: bright cartoon daylight
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  const sun = new THREE.DirectionalLight(0xfff6e0, 1.9);
+  sun.position.set(5, 11, 7);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
@@ -696,75 +963,99 @@ function initScene(
   sc.right = 9;
   sc.top = 9;
   sc.bottom = -9;
-  sun.shadow.bias = -0.0004;
+  sun.shadow.bias = -0.0005;
   scene.add(sun);
 
-  // island slab (rounded, soft-edged diorama base)
+  // island slab
   const islW = COLS * SP + 1.1;
   const islD = ROWS * SP + 1.1;
-  const grass = new THREE.MeshStandardMaterial({ color: "#6fb24e", roughness: 0.9, envMapIntensity: 0.5 });
-  const dirt = new THREE.MeshStandardMaterial({ color: "#7a5c36", roughness: 1 });
-  const base = new THREE.Mesh(rb(islW, 0.9, islD, 0.18), dirt);
+  const base = new THREE.Mesh(rb(islW, 0.9, islD, 0.2), toon("#a36b3f"));
   base.position.y = -0.47;
   base.receiveShadow = true;
   scene.add(base);
-  const grassTop = new THREE.Mesh(rb(islW - 0.08, 0.16, islD - 0.08, 0.14), grass);
+  const grassTop = new THREE.Mesh(rb(islW - 0.06, 0.16, islD - 0.06, 0.14), toon("#79c64e"));
   grassTop.position.y = -0.04;
   grassTop.receiveShadow = true;
   scene.add(grassTop);
 
-  // walkway tiles on ring cells
-  const roadMat = new THREE.MeshStandardMaterial({ color: "#d8c49a", roughness: 0.85, envMapIntensity: 0.4 });
+  // sidewalk tiles on ring cells
+  const walk = toon("#e3ded2");
   RING.forEach((c) => {
-    const tile = new THREE.Mesh(rb(SP * 0.94, 0.08, SP * 0.94, 0.06), roadMat);
+    const tile = new THREE.Mesh(rb(SP * 0.92, 0.07, SP * 0.92, 0.08), walk);
     const p = cellToWorld(c.x, c.y);
-    tile.position.set(p.x, 0.04, p.z);
+    tile.position.set(p.x, 0.035, p.z);
     tile.receiveShadow = true;
     scene.add(tile);
   });
 
-  // central plaza + fountain
-  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.08, 36), roadMat);
-  plaza.position.set(0, 0.04, (1.5 - (ROWS - 1) / 2) * SP);
+  // town square: plaza + the founder's statue
+  const plazaZ = (1.5 - (ROWS - 1) / 2) * SP;
+  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.75, 0.07, 40), toon("#efe2bd"));
+  plaza.position.set(0, 0.035, plazaZ);
   plaza.receiveShadow = true;
   scene.add(plaza);
-  const fBase = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.55, 0.6, 0.22, 24),
-    new THREE.MeshStandardMaterial({ color: "#cdbf9b", roughness: 0.8 })
-  );
-  fBase.position.copy(plaza.position);
-  fBase.position.y = 0.15;
-  fBase.castShadow = true;
-  scene.add(fBase);
-  const water = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.42, 0.42, 0.12, 24),
-    new THREE.MeshStandardMaterial({ color: "#7fc7e6", roughness: 0.2, metalness: 0.3 })
-  );
-  water.position.copy(fBase.position);
-  water.position.y = 0.22;
-  scene.add(water);
+  const statue = new THREE.Group();
+  const bronze = toon("#7f9a86");
+  const plinth = toon("#d9d2c0");
+  const put = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    statue.add(m);
+    return m;
+  };
+  put(rb(0.7, 0.16, 0.7, 0.04), plinth, 0, 0.08, 0);
+  put(rb(0.44, 0.44, 0.44, 0.04), plinth, 0, 0.38, 0);
+  put(rb(0.52, 0.06, 0.52, 0.02), plinth, 0, 0.62, 0);
+  for (const sx of [-0.05, 0.05]) put(new THREE.CylinderGeometry(0.04, 0.045, 0.3, 10), bronze, sx, 0.8, 0);
+  put(new THREE.CylinderGeometry(0.1, 0.13, 0.36, 14), bronze, 0, 1.12, 0);
+  put(new THREE.CapsuleGeometry(0.075, 0.08, 4, 14), bronze, 0, 1.4, 0);
+  put(new THREE.CylinderGeometry(0.08, 0.08, 0.1, 14), toon("#6a5a44"), 0, 1.52, 0);
+  put(new THREE.CylinderGeometry(0.02, 0.012, 0.22, 8), toon("#6a5a44"), -0.06, 1.48, -0.08).rotation.z = 1.2;
+  const arm = put(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), bronze, 0.14, 1.32, 0);
+  arm.rotation.z = -0.9;
+  put(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), toon("#6a5a44"), -0.13, 1.1, 0.02);
+  statue.position.set(0, 0.07, plazaZ);
+  scene.add(statue);
 
-  // trees
-  const trunkMat = new THREE.MeshStandardMaterial({ color: "#6b4a2b", roughness: 1 });
-  const leafMat = new THREE.MeshStandardMaterial({ color: "#3f9b52", roughness: 0.9 });
-  const treeCells: [number, number][] = [
-    [0, 1],
-    [1, 1],
-    [3, 1],
-    [1, 2],
-    [3, 2],
+  // round cartoon trees around the square
+  const trunkMat = toon("#7a4a2a");
+  const leafMat = toon("#4fae4a");
+  const leafLt = toon("#6cc95a");
+  const treeSpots: [number, number][] = [
+    [-2.3, -0.7], [-1.6, 1.1], [2.3, -0.7], [1.6, 1.1], [-0.9, -1.0], [0.9, -1.0], [-2.4, 0.4], [2.4, 0.4],
   ];
-  treeCells.forEach(([gx, gy]) => {
+  treeSpots.forEach(([x, z], i) => {
     const t = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.5, 8), trunkMat);
-    trunk.position.y = 0.25;
-    const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 10), leafMat);
-    leaves.position.y = 0.95;
-    leaves.castShadow = true;
-    t.add(trunk, leaves);
-    const p = cellToWorld(gx, gy);
-    t.position.set(p.x, 0.05, p.z);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.4, 8), trunkMat);
+    trunk.position.y = 0.2;
+    trunk.castShadow = true;
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), i % 2 ? leafMat : leafLt);
+    crown.position.y = 0.58;
+    crown.castShadow = true;
+    const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), i % 2 ? leafLt : leafMat);
+    crown2.position.set(0.14, 0.48, 0.08);
+    crown2.castShadow = true;
+    t.add(trunk, crown, crown2);
+    t.position.set(x, 0.05, z);
     scene.add(t);
+  });
+
+  // fluffy clouds drifting behind the island
+  const cloudMat = noOutline(toon("#ffffff"));
+  const clouds: THREE.Group[] = [];
+  [[-6.5, 2.6, -7.5], [1.5, 3.4, -9], [7, 2.2, -7]].forEach(([x, y, z], i) => {
+    const c = new THREE.Group();
+    [[0, 0, 0, 0.9], [0.9, -0.15, 0.1, 0.65], [-0.9, -0.2, 0.1, 0.6], [0.35, 0.4, -0.1, 0.6]].forEach(([cx, cy, cz, r]) => {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), cloudMat);
+      puff.position.set(cx, cy, cz);
+      c.add(puff);
+    });
+    c.position.set(x, y, z);
+    c.userData.drift = i;
+    scene.add(c);
+    clouds.push(c);
   });
 
   // buildings
@@ -779,50 +1070,70 @@ function initScene(
     pickables.push(group);
     bodies.push({ id: loc.id, body });
 
-    const star = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.16),
-      new THREE.MeshStandardMaterial({ color: "#ffcf4d", emissive: "#a9780a", emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.3 })
-    );
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.17), toon("#fed90f", { emissive: "#b88a00", emissiveIntensity: 0.4 }));
     star.position.set(p.x + halfW, topY + 0.35, p.z + halfW);
     star.visible = false;
     star.userData.spin = true;
     scene.add(star);
     jobMarkers[loc.id] = star;
   });
+  const fh = buildFlandersHouse();
+  const fp = cellToWorld(RING[FLANDERS_CELL].x, RING[FLANDERS_CELL].y);
+  fh.position.set(fp.x, 0, fp.z);
+  scene.add(fh);
 
-  // token: a glossy game pawn with a highlight ring
-  const token = new THREE.Group();
-  const pawnMat = new THREE.MeshStandardMaterial({ color: "#e8c65e", roughness: 0.18, metalness: 0.95, envMapIntensity: 1.4 });
-  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.14, 20), pawnMat);
-  foot.position.y = 0.07;
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.5, 16), pawnMat);
-  stem.position.y = 0.42;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 20), pawnMat);
-  head.position.y = 0.82;
-  [foot, stem, head].forEach((m) => {
-    m.castShadow = true;
-    token.add(m);
+  // name labels render in a final overlay pass (above the tokens)
+  const labelScene = new THREE.Scene();
+  const sprites: THREE.Sprite[] = [];
+  scene.traverse((o) => {
+    if ((o as THREE.Sprite).isSprite) sprites.push(o as THREE.Sprite);
   });
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.42, 0.05, 12, 32),
-    new THREE.MeshStandardMaterial({ color: "#ffd86a", emissive: "#c99a2a", emissiveIntensity: 0.7 })
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.04;
-  token.add(ring);
-  scene.add(token);
+  sprites.forEach((sp) => labelScene.attach(sp));
 
-  let curIndex = ringIndexOf(deps.getState().location);
+  // tokens: you, and Ned
+  const st0 = deps.getState();
+  const look = TOKEN_LOOK[st0.avatar] ?? TOKEN_LOOK.p0;
+  const token = makeFigure({ ...look, shirt: avatarShirt(st0.avatar) }, "#fed90f");
+  const ned = makeFigure(NED_LOOK, "#7fcf6d");
+  ned.scale.setScalar(0.92);
+  const tokenScene = new THREE.Scene();
+  tokenScene.add(token, ned);
+  tokenScene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
+  tokenScene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  const tokenSun = new THREE.DirectionalLight(0xfff6e0, 1.9);
+  tokenSun.position.copy(sun.position);
+  tokenScene.add(tokenSun);
+  // soft contact shadows on the board (the tokens can't cast real ones from their own scene)
+  const blobMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x1d1a17, transparent: true, opacity: 0.28, depthWrite: false }));
+  const blobGeo = new THREE.CircleGeometry(0.34, 24);
+  blobGeo.rotateX(-Math.PI / 2);
+  const tokenBlob = new THREE.Mesh(blobGeo, blobMat);
+  const nedBlob = new THREE.Mesh(blobGeo, blobMat);
+  scene.add(tokenBlob, nedBlob);
+
+  let curIndex = ringIndex(st0.location);
   if (curIndex < 0) curIndex = 0;
   const startP = tokenWorld(RING[curIndex].x, RING[curIndex].y);
   token.position.set(startP.x, 0, startP.z);
+
+  const nedTarget = new THREE.Vector3();
+  function placeNed(snap: boolean) {
+    const s = deps.getState();
+    const cell = s.rival?.cell ?? FLANDERS_CELL;
+    const p = tokenWorld(RING[cell].x, RING[cell].y);
+    // share the space politely when you're both at the same spot
+    if (cell === curIndex) p.x += 0.5;
+    nedTarget.copy(p);
+    if (snap) ned.position.copy(p);
+  }
+  placeNed(true);
 
   // ---- interaction + animation ----
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let hoverId: LocationId | null = null;
 
-  const walk = {
+  const walkState = {
     active: false,
     cells: [] as THREE.Vector3[],
     seg: 0,
@@ -832,15 +1143,14 @@ function initScene(
 
   function setHover(id: LocationId | null) {
     if (hoverId === id) return;
-    // restore previous
     if (hoverId) {
       const prev = bodies.find((b) => b.id === hoverId);
-      if (prev) (prev.body.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
+      if (prev) (prev.body.material as THREE.MeshToonMaterial).emissive.setHex(0x000000);
     }
     hoverId = id;
     if (id) {
       const b = bodies.find((x) => x.id === id);
-      if (b) (b.body.material as THREE.MeshStandardMaterial).emissive.setHex(0x3a2d10);
+      if (b) (b.body.material as THREE.MeshToonMaterial).emissive.setHex(0x4a3c10);
     }
     renderer.domElement.style.cursor = id ? "pointer" : "default";
   }
@@ -863,7 +1173,7 @@ function initScene(
 
   function startWalk(toId: LocationId) {
     const st = deps.getState();
-    if (walk.active) return;
+    if (walkState.active) return;
     if (toId === st.location) {
       deps.onEnter()(toId);
       return;
@@ -878,19 +1188,16 @@ function initScene(
       deps.onEnter()(toId);
       return;
     }
-    walk.cells = [
-      tokenWorld(RING[curIndex].x, RING[curIndex].y),
-      ...path.map((c) => tokenWorld(c.x, c.y)),
-    ];
-    walk.seg = 0;
-    walk.t = 0;
-    walk.active = true;
-    walk.target = toId;
+    walkState.cells = [tokenWorld(RING[curIndex].x, RING[curIndex].y), ...path.map((c) => tokenWorld(c.x, c.y))];
+    walkState.seg = 0;
+    walkState.t = 0;
+    walkState.active = true;
+    walkState.target = toId;
     setHover(null);
   }
 
   const onMove = (e: PointerEvent) => {
-    if (walk.active) return;
+    if (walkState.active) return;
     setHover(pick(e));
   };
   const onClick = (e: PointerEvent) => {
@@ -900,7 +1207,6 @@ function initScene(
   renderer.domElement.addEventListener("pointermove", onMove);
   renderer.domElement.addEventListener("pointerdown", onClick);
 
-  // sync job markers + here ring to current state
   function refreshMarkers() {
     const st = deps.getState();
     const job = st.jobId ? getJob(st.jobId) : null;
@@ -908,17 +1214,18 @@ function initScene(
   }
   refreshMarkers();
 
-  function sync(locId: LocationId) {
-    const idx = ringIndexOf(locId);
+  function sync(s: GameState) {
     refreshMarkers();
-    if (idx < 0 || idx === curIndex || walk.active) return;
-    // snap token to the new location (e.g. after a week rolls over)
-    curIndex = idx;
-    const p = tokenWorld(RING[idx].x, RING[idx].y);
-    token.position.set(p.x, 0, p.z);
+    const idx = ringIndex(s.location);
+    if (idx >= 0 && idx !== curIndex && !walkState.active) {
+      // snap the token to the new location (e.g. after a week rolls over)
+      curIndex = idx;
+      const p = tokenWorld(RING[idx].x, RING[idx].y);
+      token.position.set(p.x, 0, p.z);
+    }
+    placeNed(false);
   }
 
-  // resize
   function resize() {
     const w = mount.clientWidth || 1;
     const h = mount.clientHeight || 1;
@@ -930,55 +1237,88 @@ function initScene(
   const ro = new ResizeObserver(resize);
   ro.observe(mount);
 
-  // animation loop
+  const spinners: THREE.Object3D[] = [];
+  const puffs: THREE.Object3D[] = [];
+  scene.traverse((o) => {
+    if (o.userData.spin) spinners.push(o);
+    if (o.userData.puff !== undefined) puffs.push(o);
+  });
+
   const clock = new THREE.Clock();
   let raf = 0;
   const tick = () => {
     const dt = Math.min(clock.getDelta(), 0.05);
     const time = clock.elapsedTime;
 
-    // spin disco balls
-    scene.traverse((o) => {
-      if ((o as any).userData?.spin) o.rotation.y += dt * 1.5;
+    spinners.forEach((o) => (o.rotation.y += dt * 1.5));
+    puffs.forEach((o) => {
+      const k = o.userData.puff as number;
+      o.scale.setScalar(1 + Math.sin(time * 1.6 + k * 1.3) * 0.08);
     });
-    water.position.y = 0.22 + Math.sin(time * 2) * 0.01;
+    clouds.forEach((c) => (c.position.x += Math.sin(time * 0.15 + c.userData.drift * 2) * dt * 0.08));
 
     // hover bob
     bodies.forEach((b) => {
       const g = b.body.parent!;
-      const want = b.id === hoverId && !walk.active ? 0.12 : 0;
+      const want = b.id === hoverId && !walkState.active ? 0.12 : 0;
       g.position.y += (want - g.position.y) * Math.min(1, dt * 12);
     });
 
-    if (walk.active) {
-      walk.t += dt / STEP;
-      while (walk.t >= 1 && walk.seg < walk.cells.length - 1) {
-        walk.t -= 1;
-        walk.seg += 1;
+    if (walkState.active) {
+      walkState.t += dt / STEP;
+      while (walkState.t >= 1 && walkState.seg < walkState.cells.length - 1) {
+        walkState.t -= 1;
+        walkState.seg += 1;
       }
-      if (walk.seg >= walk.cells.length - 1) {
-        // arrived
-        const end = walk.cells[walk.cells.length - 1];
+      if (walkState.seg >= walkState.cells.length - 1) {
+        const end = walkState.cells[walkState.cells.length - 1];
         token.position.set(end.x, 0, end.z);
-        walk.active = false;
-        const toId = walk.target!;
-        curIndex = ringIndexOf(toId);
+        walkState.active = false;
+        const toId = walkState.target!;
+        curIndex = ringIndex(toId);
         deps.dispatch({ type: "MOVE", to: toId });
         deps.onEnter()(toId);
       } else {
-        const a = walk.cells[walk.seg];
-        const b = walk.cells[walk.seg + 1];
-        token.position.x = a.x + (b.x - a.x) * walk.t;
-        token.position.z = a.z + (b.z - a.z) * walk.t;
-        token.position.y = Math.sin(walk.t * Math.PI) * 0.45; // hop arc
+        const a = walkState.cells[walkState.seg];
+        const b = walkState.cells[walkState.seg + 1];
+        token.position.x = a.x + (b.x - a.x) * walkState.t;
+        token.position.z = a.z + (b.z - a.z) * walkState.t;
+        token.position.y = Math.sin(walkState.t * Math.PI) * 0.45; // hop arc
+        token.rotation.z = Math.sin(walkState.t * Math.PI * 2) * 0.12; // waddle
       }
     } else {
       token.position.y += (0 - token.position.y) * Math.min(1, dt * 10);
+      token.rotation.z *= 0.8;
     }
-    // gentle idle bob of the pawn head handled by scale? keep static.
-    ring.rotation.z = time; // subtle spin
 
-    renderer.render(scene, camera);
+    // Ned strolls (with a little bounce) toward wherever he's headed
+    const dx = nedTarget.x - ned.position.x;
+    const dz = nedTarget.z - ned.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 0.01) {
+      const stepLen = Math.min(dist, dt * 3.2);
+      ned.position.x += (dx / dist) * stepLen;
+      ned.position.z += (dz / dist) * stepLen;
+      ned.position.y = Math.abs(Math.sin(time * 14)) * 0.12;
+    } else {
+      ned.position.y *= 0.8;
+    }
+    // idle sway, so both pieces feel alive
+    token.rotation.y = walkState.active ? 0 : Math.sin(time * 1.4) * 0.12;
+    ned.rotation.y = Math.sin(time * 1.2 + 1) * 0.14;
+
+    tokenBlob.position.set(token.position.x, 0.075, token.position.z);
+    nedBlob.position.set(ned.position.x, 0.075, ned.position.z);
+    tokenBlob.scale.setScalar(1 - token.position.y * 0.6);
+
+    outline.autoClear = true;
+    outline.render(scene, camera);
+    outline.autoClear = false;
+    renderer.clearDepth();
+    outline.render(tokenScene, camera);
+    renderer.autoClear = false;
+    renderer.render(labelScene, camera);
+    renderer.autoClear = true;
     raf = requestAnimationFrame(tick);
   };
   tick();
@@ -989,14 +1329,17 @@ function initScene(
       ro.disconnect();
       renderer.domElement.removeEventListener("pointermove", onMove);
       renderer.domElement.removeEventListener("pointerdown", onClick);
-      renderer.dispose();
-      scene.traverse((o) => {
+      [scene, tokenScene, labelScene].forEach((root) => root.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.geometry) m.geometry.dispose();
         const mat = (m as any).material;
         if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-        else if (mat) mat.dispose();
-      });
+        else if (mat) {
+          if (mat.map) mat.map.dispose();
+          mat.dispose();
+        }
+      }));
+      renderer.dispose();
       if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
     },
     sync,
@@ -1013,28 +1356,40 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
   onEnterRef.current = onEnter;
 
   useEffect(() => {
-    if (!mountRef.current) return;
-    const api = initScene(mountRef.current, {
-      dispatch,
-      onEnter: () => onEnterRef.current,
-      getState: () => stateRef.current,
-    });
-    apiRef.current = api;
-    return () => api.dispose();
+    let cancelled = false;
+    // wait (briefly) for the cartoon font so canvas signs + labels letter correctly
+    const fontReady = Promise.race([
+      document.fonts ? document.fonts.load(`40px "Luckiest Guy"`) : Promise.resolve(),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
+    const start = () => {
+      if (cancelled || !mountRef.current) return;
+      apiRef.current = initScene(mountRef.current, {
+        dispatch,
+        onEnter: () => onEnterRef.current,
+        getState: () => stateRef.current,
+      });
+    };
+    fontReady.then(start, start);
+    return () => {
+      cancelled = true;
+      apiRef.current?.dispose();
+      apiRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // react to external location changes (week rollover sends you home)
+  // react to external changes (week rollover sends you home, Ned wanders)
   useEffect(() => {
-    apiRef.current?.sync(state.location);
-  }, [state.location, state.jobId]);
+    apiRef.current?.sync(state);
+  }, [state.location, state.jobId, state.rival.cell]);
 
   return (
     <div className="card stage board-card">
       <div className="map-head">
         <div>
-          <h2>Fast Lane City</h2>
-          <p>Pick a spot — your token travels the board, then you head inside.</p>
+          <h2>Springfield</h2>
+          <p>Pick a spot. You walk the board, then head inside.</p>
         </div>
         <span className="tag">{state.hours}h left</span>
       </div>

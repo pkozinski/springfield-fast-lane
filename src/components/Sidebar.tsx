@@ -1,7 +1,8 @@
 import { useGame } from "../game/store";
-import { goalProgress, netWorth } from "../game/engine";
+import { goalProgress, netWorth, rivalProgress } from "../game/engine";
 import { getJob } from "../game/data";
 import { Icon, type IconName } from "./Icon";
+import { RivalPortrait } from "./Portrait";
 
 function Bar({ pct, meterColor }: { pct: number; meterColor?: string }) {
   const full = pct >= 100;
@@ -17,6 +18,8 @@ export default function Sidebar() {
   const gp = goalProgress(state);
   const worth = netWorth(state);
   const job = state.jobId ? getJob(state.jobId) : null;
+  const rp = rivalProgress(state);
+  const r = state.rival;
 
   const goals: { key: keyof typeof gp; icon: IconName; name: string; now: string; target: string }[] = [
     { key: "wealth", icon: "wealth", name: "Wealth", now: `$${worth.toLocaleString()}`, target: `$${state.goals.wealth.toLocaleString()}` },
@@ -44,6 +47,41 @@ export default function Sidebar() {
         ))}
       </section>
 
+      <section className="card rival-card">
+        <h3>Keeping Up with the Flanderses</h3>
+        <div className="rival-head">
+          <span className="rival-face">
+            <RivalPortrait size={50} />
+          </span>
+          <div className="rival-meta">
+            <span className="rival-name">Ned Flanders</span>
+            <span className="rival-job">{r.jobTitle}</span>
+          </div>
+        </div>
+        <p className="rival-quote">“{r.quote}”</p>
+        <div className="race">
+          {goals.map((g) => (
+            <div className="race-row" key={g.key}>
+              <span className="race-label">
+                <Icon name={g.icon} size={14} /> {g.name}
+              </span>
+              <div className="race-bars">
+                <Bar pct={gp[g.key]} />
+                <Bar pct={rp[g.key]} meterColor="#3f9142" />
+              </div>
+            </div>
+          ))}
+          <div className="race-key">
+            <span>
+              <i className="you" /> You
+            </span>
+            <span>
+              <i className="ned" /> Ned
+            </span>
+          </div>
+        </div>
+      </section>
+
       <section className="card">
         <h3>Condition</h3>
         <div className="meters">
@@ -54,7 +92,7 @@ export default function Sidebar() {
               </span>
               <span className="gval">{Math.round(state.happiness)}/100</span>
             </div>
-            <Bar pct={state.happiness} meterColor="linear-gradient(180deg,#e7b86a,#c07a3a)" />
+            <Bar pct={state.happiness} meterColor="#ff9f1c" />
           </div>
           <div className="meter">
             <div className="goal-top">
@@ -63,18 +101,18 @@ export default function Sidebar() {
               </span>
               <span className="gval">{Math.round(state.energy)}/100</span>
             </div>
-            <Bar pct={state.energy} meterColor="linear-gradient(180deg,#a9cc7e,#6f9a4e)" />
+            <Bar pct={state.energy} meterColor="#52b947" />
           </div>
         </div>
         <p className="list-note" style={{ marginTop: 14, marginBottom: 0 }}>
-          {job ? `Employed as ${job.title} ($${job.wage}/hr)` : "Unemployed — visit the Careers Hub"}
+          {job ? `Employed as ${job.title} ($${job.wage}/hr)` : "Unemployed. Visit the Employment Office."}
         </p>
       </section>
 
       <section className="card">
         <h3>Activity Log</h3>
         <div className="log">
-          {state.log.length === 0 && <div className="log-item">Your story starts here…</div>}
+          {state.log.length === 0 && <div className="log-item">Your story starts here...</div>}
           {state.log.map((e) => (
             <div className={"log-item " + e.kind} key={e.id}>
               <span className="wk">W{e.week}</span>

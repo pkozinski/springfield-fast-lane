@@ -20,8 +20,12 @@ export const CONFIG = {
   loanLimit: 8000,
   happinessDecayPerWeek: 9,
   energyDecayPerWeek: 10,
-  travelHoursPerTile: 0.5, // multiplied by Manhattan distance
+  travelHoursPerTile: 0.5, // multiplied by spaces moved
   carTravelDiscount: 0.5, // owning a car halves travel time
+  /** Flanders' average weekly gain in net worth (his pace sets the difficulty) */
+  rivalWeeklyIncome: 300,
+  /** chance per week that Flanders finishes another course */
+  rivalStudyChance: 0.42,
 };
 
 export const DEFAULT_GOALS: Goals = {
@@ -31,80 +35,58 @@ export const DEFAULT_GOALS: Goals = {
   career: 5,
 };
 
-// City map -----------------------------------------------------------------
+// Springfield --------------------------------------------------------------
 // Laid out clockwise around the board perimeter (5 columns x 4 rows).
-// The hollow centre is where the opened location panel appears.
+// The hollow centre is the town square; the opened location card appears over it.
 export const LOCATIONS: Location[] = [
   // top row (left -> right)
-  { id: "home", name: "Your Place", short: "Home", category: "home", icon: "🏠", x: 0, y: 0, accent: "#7c5cff", blurb: "Rest, check your life goals, and sleep to end the week." },
-  { id: "employment", name: "Careers Hub", short: "Careers", category: "employment", icon: "💼", x: 1, y: 0, accent: "#38bdf8", blurb: "Browse and apply for jobs that match your skills." },
-  { id: "university", name: "City University", short: "Uni", category: "university", icon: "🎓", x: 2, y: 0, accent: "#f59e0b", blurb: "Enroll in courses to earn credits and unlock better careers." },
-  { id: "burger", name: "Monolith Burger", short: "Burger", category: "food", icon: "🍔", x: 3, y: 0, accent: "#fb923c", blurb: "Flip burgers for a paycheck — or just grab a quick meal." },
-  { id: "zmart", name: "Z-Mart", short: "Z-Mart", category: "shop", icon: "🛒", x: 4, y: 0, accent: "#60a5fa", blurb: "Everyday goods, a sharp wardrobe, and retail jobs." },
+  { id: "home", name: "Evergreen Terrace", short: "Home", category: "home", x: 0, y: 0, accent: "#e8826b", blurb: "Plop down on the couch, check your goals, and sleep to end the week." },
+  { id: "employment", name: "Springfield Employment Office", short: "Jobs", category: "employment", x: 1, y: 0, accent: "#4a8fd9", blurb: "Take a number. Browse every job in town that'll have you." },
+  { id: "university", name: "Springfield University", short: "Uni", category: "university", x: 2, y: 0, accent: "#b8503a", blurb: "Enroll in courses to earn credits and unlock better careers. Nerds welcome." },
+  { id: "krusty", name: "Krusty Burger", short: "Krusty", category: "food", x: 3, y: 0, accent: "#e0352b", blurb: "Flip burgers for a paycheck, or grab a combo. Hey hey!" },
+  { id: "trynsave", name: "Try-N-Save", short: "Try-N-Save", category: "shop", x: 4, y: 0, accent: "#2f6fd6", blurb: "Discount everything: a sharp suit, home comforts, and retail shifts." },
 
   // right column (top -> bottom)
-  { id: "hitech", name: "Hi-Tech Systems", short: "Hi-Tech", category: "shop", icon: "💻", x: 4, y: 1, accent: "#22d3ee", blurb: "Buy modern gear — and the best-paying careers in town." },
-  { id: "cinema", name: "The Black Hole", short: "Cinema", category: "leisure", icon: "🎬", x: 4, y: 2, accent: "#c084fc", blurb: "Movies, streaming lounges, and good vibes." },
+  { id: "globex", name: "Globex Corporation", short: "Globex", category: "shop", x: 4, y: 1, accent: "#14a39a", blurb: "Gadgets, gear, and the best-paying careers in town. Don't ask about the volcano." },
+  { id: "aztec", name: "Aztec Theater", short: "Aztec", category: "leisure", x: 4, y: 2, accent: "#e08a1e", blurb: "Catch a flick. Tonight: an action-movie double feature." },
 
   // bottom row (right -> left)
-  { id: "club", name: "Neon Club", short: "Club", category: "leisure", icon: "🪩", x: 4, y: 3, accent: "#e879f9", blurb: "A big night out for a big happiness boost." },
-  { id: "gym", name: "Pulse Gym", short: "Gym", category: "leisure", icon: "💪", x: 3, y: 3, accent: "#f472b6", blurb: "Work out to recharge energy and lift your mood." },
-  { id: "grocery", name: "Pay 'n Save", short: "Grocery", category: "food", icon: "🥦", x: 2, y: 3, accent: "#4ade80", blurb: "Cheap groceries to keep your energy topped up." },
-  { id: "cafe", name: "Socino's Café", short: "Café", category: "food", icon: "☕", x: 1, y: 3, accent: "#a78bfa", blurb: "Barista gigs and a decent espresso." },
-  { id: "factory", name: "Apex Logistics", short: "Factory", category: "workplace", icon: "🏭", x: 0, y: 3, accent: "#f87171", blurb: "Hard, steady work. No degree required." },
+  { id: "moes", name: "Moe's Tavern", short: "Moe's", category: "leisure", x: 4, y: 3, accent: "#7a4b2a", blurb: "Dim, sticky, and always open. A cold Duff will lift your spirits." },
+  { id: "bowlarama", name: "Bowl-A-Rama", short: "Bowling", category: "leisure", x: 3, y: 3, accent: "#d94f9a", blurb: "Bowl a few frames to lift your mood and stretch your legs." },
+  { id: "kwikemart", name: "Kwik-E-Mart", short: "Kwik-E-Mart", category: "food", x: 2, y: 3, accent: "#2fa35a", blurb: "Thank you, come again! Groceries, Squishees, and day-old hot dogs." },
+  { id: "lardlad", name: "Lard Lad Donuts", short: "Lard Lad", category: "food", x: 1, y: 3, accent: "#ef5fa7", blurb: "Mmm... donuts. Counter shifts available." },
+  { id: "plant", name: "Springfield Nuclear Power Plant", short: "Power Plant", category: "workplace", x: 0, y: 3, accent: "#7bbf3a", blurb: "Sector 7-G is hiring. No degree required, and it shows." },
 
   // left column
-  { id: "bank", name: "Vertex Bank", short: "Bank", category: "bank", icon: "🏦", x: 0, y: 2, accent: "#34d399", blurb: "Save with interest, or borrow to get ahead." },
+  { id: "bank", name: "First Bank of Springfield", short: "Bank", category: "bank", x: 0, y: 2, accent: "#2e8b57", blurb: "Save with interest, or borrow to get ahead." },
 ];
-
-/** Non-interactive building-sized scenery that fills an empty board cell (col,row). */
-export const DECORATIONS: { x: number; y: number; icon: string; name: string }[] = [
-  { x: 0, y: 1, icon: "🌳", name: "City Park" },
-];
-
-/** Freely-placed greenery scattered across the grounds (percentage positions). */
-export const SCENERY: { left: number; top: number; icon: string; size: number }[] = [
-  { left: 30, top: 30, icon: "🌳", size: 1.1 },
-  { left: 70, top: 30, icon: "🌲", size: 1 },
-  { left: 50, top: 24, icon: "🌳", size: 0.9 },
-  { left: 28, top: 70, icon: "🌲", size: 1 },
-  { left: 72, top: 70, icon: "🌳", size: 1.1 },
-  { left: 50, top: 76, icon: "🌲", size: 0.9 },
-  { left: 40, top: 50, icon: "🌸", size: 0.7 },
-  { left: 61, top: 50, icon: "🌷", size: 0.7 },
-  { left: 50, top: 50, icon: "⛲", size: 1.2 },
-];
-
-/** Character portrait options (see Portrait.tsx for the rendered cameos). */
-export const AVATARS = ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7"];
-
-/** Board dimensions derived from the furthest location coordinates. */
-export const BOARD_COLS = Math.max(...LOCATIONS.map((l) => l.x)) + 1;
-export const BOARD_ROWS = Math.max(...LOCATIONS.map((l) => l.y)) + 1;
 
 /**
- * The perimeter track, clockwise. The character hops from cell to cell along
- * this loop (shortest direction), so movement reads directionally like a board.
- * Includes the park cell as a walk-through waypoint (no `id`).
+ * The perimeter track, clockwise. Tokens hop from cell to cell along this
+ * loop (shortest direction), so movement reads directionally like a board.
+ * The cell without an `id` is the Flanders house, a walk-through space.
  */
 export const RING: { x: number; y: number; id?: LocationId }[] = [
   { x: 0, y: 0, id: "home" },
   { x: 1, y: 0, id: "employment" },
   { x: 2, y: 0, id: "university" },
-  { x: 3, y: 0, id: "burger" },
-  { x: 4, y: 0, id: "zmart" },
-  { x: 4, y: 1, id: "hitech" },
-  { x: 4, y: 2, id: "cinema" },
-  { x: 4, y: 3, id: "club" },
-  { x: 3, y: 3, id: "gym" },
-  { x: 2, y: 3, id: "grocery" },
-  { x: 1, y: 3, id: "cafe" },
-  { x: 0, y: 3, id: "factory" },
+  { x: 3, y: 0, id: "krusty" },
+  { x: 4, y: 0, id: "trynsave" },
+  { x: 4, y: 1, id: "globex" },
+  { x: 4, y: 2, id: "aztec" },
+  { x: 4, y: 3, id: "moes" },
+  { x: 3, y: 3, id: "bowlarama" },
+  { x: 2, y: 3, id: "kwikemart" },
+  { x: 1, y: 3, id: "lardlad" },
+  { x: 0, y: 3, id: "plant" },
   { x: 0, y: 2, id: "bank" },
-  { x: 0, y: 1 }, // park — pass-through
+  { x: 0, y: 1 }, // the Flanders house: pass-through
 ];
 
-const ringIndex = (id: LocationId) => RING.findIndex((c) => c.id === id);
+/** Ring index of the Flanders house (where Ned starts and sleeps). */
+export const FLANDERS_CELL = RING.length - 1;
+
+export const ringIndex = (id: LocationId) => RING.findIndex((c) => c.id === id);
 
 /** Minimum number of steps around the loop between two locations. */
 export function ringDistance(fromId: LocationId, toId: LocationId): number {
@@ -140,15 +122,15 @@ export function getLocation(id: string): Location {
 
 // Career ladder ------------------------------------------------------------
 export const JOBS: Job[] = [
-  { id: "burger-cook", title: "Burger Cook", locationId: "burger", wage: 9, tier: 1, reqCredits: 0, reqWardrobe: false, blurb: "Entry-level. Everyone starts somewhere." },
-  { id: "stocker", title: "Stock Clerk", locationId: "zmart", wage: 11, tier: 2, reqCredits: 0, reqWardrobe: false, blurb: "Keep the shelves full at Z-Mart." },
-  { id: "line-worker", title: "Line Worker", locationId: "factory", wage: 14, tier: 2, reqCredits: 0, reqWardrobe: false, blurb: "Tough physical work, solid pay." },
-  { id: "barista", title: "Head Barista", locationId: "cafe", wage: 15, tier: 3, reqCredits: 2, reqWardrobe: false, blurb: "Run the café bar. Needs a little training." },
+  { id: "fry-cook", title: "Krusty Burger Fry Cook", locationId: "krusty", wage: 9, tier: 1, reqCredits: 0, reqWardrobe: false, blurb: "Entry level. Don't ask what's in the sauce." },
+  { id: "stocker", title: "Stock Clerk", locationId: "trynsave", wage: 11, tier: 2, reqCredits: 0, reqWardrobe: false, blurb: "Keep the bargain bins full at Try-N-Save." },
+  { id: "safety", title: "Safety Inspector, Sector 7-G", locationId: "plant", wage: 14, tier: 2, reqCredits: 0, reqWardrobe: false, blurb: "Mostly involves napping at a console. Solid pay." },
+  { id: "donut-chef", title: "Head Donut Chef", locationId: "lardlad", wage: 15, tier: 3, reqCredits: 2, reqWardrobe: false, blurb: "Run the fryer at Lard Lad. Needs a little training." },
   { id: "teller", title: "Bank Teller", locationId: "bank", wage: 18, tier: 3, reqCredits: 3, reqWardrobe: true, blurb: "A respectable desk job. Dress the part." },
-  { id: "retail-mgr", title: "Retail Manager", locationId: "zmart", wage: 24, tier: 4, reqCredits: 5, reqWardrobe: true, blurb: "Run the store floor at Z-Mart." },
-  { id: "support", title: "IT Specialist", locationId: "hitech", wage: 28, tier: 4, reqCredits: 6, reqWardrobe: true, blurb: "Keep Hi-Tech's systems running." },
-  { id: "engineer", title: "Software Engineer", locationId: "hitech", wage: 40, tier: 5, reqCredits: 9, reqWardrobe: true, blurb: "The fast lane to wealth. Highly skilled." },
-  { id: "cto", title: "Chief Technologist", locationId: "hitech", wage: 58, tier: 6, reqCredits: 13, reqWardrobe: true, blurb: "Top of the ladder. The dream job." },
+  { id: "store-mgr", title: "Store Manager", locationId: "trynsave", wage: 24, tier: 4, reqCredits: 5, reqWardrobe: true, blurb: "Run the floor at Try-N-Save." },
+  { id: "it", title: "Globex IT Specialist", locationId: "globex", wage: 28, tier: 4, reqCredits: 6, reqWardrobe: true, blurb: "Keep Globex's systems (and secret lairs) running." },
+  { id: "engineer", title: "Globex Engineer", locationId: "globex", wage: 40, tier: 5, reqCredits: 9, reqWardrobe: true, blurb: "The fast lane to wealth. Hammocks in the office." },
+  { id: "vp", title: "VP of World Domination", locationId: "globex", wage: 58, tier: 6, reqCredits: 13, reqWardrobe: true, blurb: "Top of the ladder. Great boss, odd hobbies." },
 ];
 
 export function jobsAt(locationId: string): Job[] {
@@ -157,21 +139,21 @@ export function jobsAt(locationId: string): Job[] {
 
 // University ---------------------------------------------------------------
 export const COURSES: Course[] = [
-  { id: "foundations", name: "Foundations", credits: 1, baseCost: 180, hours: 6, blurb: "Core skills to get started." },
+  { id: "remedial", name: "Remedial Science 101", credits: 1, baseCost: 180, hours: 6, blurb: "Core skills to get started. Mostly safe." },
   { id: "business", name: "Business & Finance", credits: 2, baseCost: 420, hours: 10, blurb: "Open the door to management roles." },
-  { id: "comp-sci", name: "Computer Science", credits: 3, baseCost: 780, hours: 14, blurb: "The gateway to high-paying tech careers." },
+  { id: "nuclear", name: "Nuclear Physics", credits: 3, baseCost: 780, hours: 14, blurb: "The gateway to the high-paying Globex careers." },
 ];
 
 // Shop catalogue -----------------------------------------------------------
 export const ITEMS: ShopItem[] = [
-  { id: "wardrobe", name: "Professional Wardrobe", locationId: "zmart", cost: 220, happy: 6, wealth: 90, category: "wardrobe", icon: "👔", blurb: "Required for most professional careers." },
-  { id: "microwave", name: "Microwave", locationId: "zmart", cost: 110, happy: 4, wealth: 40, category: "comfort", icon: "🍲", blurb: "Hot meals at home." },
-  { id: "coffeemaker", name: "Espresso Machine", locationId: "zmart", cost: 160, happy: 6, wealth: 60, category: "comfort", icon: "☕", blurb: "Small daily luxury." },
-  { id: "tv", name: "4K TV", locationId: "hitech", cost: 650, happy: 14, wealth: 300, category: "tech", icon: "📺", blurb: "Big-screen bliss." },
-  { id: "console", name: "Game Console", locationId: "hitech", cost: 520, happy: 13, wealth: 240, category: "tech", icon: "🎮", blurb: "Hours of entertainment." },
-  { id: "laptop", name: "Laptop", locationId: "hitech", cost: 1200, happy: 10, wealth: 650, category: "tech", icon: "💻", blurb: "Study faster and work from home." },
-  { id: "phone", name: "Smartphone", locationId: "hitech", cost: 900, happy: 12, wealth: 450, category: "tech", icon: "📱", blurb: "Stay connected." },
-  { id: "car", name: "Electric Car", locationId: "hitech", cost: 5200, happy: 22, wealth: 3800, category: "vehicle", icon: "🚗", blurb: "Cuts your travel time across the city in half." },
+  { id: "suit", name: "Business Suit", locationId: "trynsave", cost: 220, happy: 6, wealth: 90, category: "wardrobe", blurb: "Required for most professional careers." },
+  { id: "couch", name: "New Couch", locationId: "trynsave", cost: 110, happy: 4, wealth: 40, category: "comfort", blurb: "Every family needs a good couch." },
+  { id: "massage", name: "Massage Chair", locationId: "trynsave", cost: 160, happy: 6, wealth: 60, category: "comfort", blurb: "Small daily luxury." },
+  { id: "tv", name: "Big-Screen TV", locationId: "globex", cost: 650, happy: 14, wealth: 300, category: "tech", blurb: "Cartoon marathons in glorious widescreen." },
+  { id: "console", name: "Bonestorm Console", locationId: "globex", cost: 520, happy: 13, wealth: 240, category: "tech", blurb: "The game everyone's talking about." },
+  { id: "laptop", name: "Laptop", locationId: "globex", cost: 1200, happy: 10, wealth: 650, category: "tech", blurb: "Study faster: courses take 20% less time." },
+  { id: "phone", name: "Smartphone", locationId: "globex", cost: 900, happy: 12, wealth: 450, category: "tech", blurb: "Stay connected." },
+  { id: "car", name: "The Homer", locationId: "globex", cost: 5200, happy: 22, wealth: 3800, category: "vehicle", blurb: "Bubble dome, three horns, and half the travel time." },
 ];
 
 export function itemsAt(locationId: string): ShopItem[] {
@@ -186,10 +168,10 @@ export function getItem(id: string): ShopItem {
 
 // Food ---------------------------------------------------------------------
 export const FOODS: FoodItem[] = [
-  { id: "burger-meal", name: "Burger Combo", locationId: "burger", cost: 12, energy: 35, happy: 4, hours: 1, icon: "🍔" },
-  { id: "cafe-meal", name: "Café Lunch", locationId: "cafe", cost: 16, energy: 32, happy: 6, hours: 1, icon: "🥪" },
-  { id: "groceries", name: "Week of Groceries", locationId: "grocery", cost: 55, energy: 55, happy: 3, hours: 2, icon: "🛍️" },
-  { id: "snack", name: "Quick Snack", locationId: "grocery", cost: 8, energy: 15, happy: 1, hours: 1, icon: "🍎" },
+  { id: "krusty-combo", name: "Krusty Burger Combo", locationId: "krusty", cost: 12, energy: 35, happy: 4, hours: 1 },
+  { id: "donuts", name: "Box of Donuts", locationId: "lardlad", cost: 16, energy: 32, happy: 6, hours: 1 },
+  { id: "groceries", name: "Week of Groceries", locationId: "kwikemart", cost: 55, energy: 55, happy: 3, hours: 2 },
+  { id: "squishee", name: "Squishee", locationId: "kwikemart", cost: 8, energy: 15, happy: 1, hours: 1 },
 ];
 
 export function foodsAt(locationId: string): FoodItem[] {
@@ -198,10 +180,11 @@ export function foodsAt(locationId: string): FoodItem[] {
 
 // Leisure ------------------------------------------------------------------
 export const LEISURE: LeisureActivity[] = [
-  { id: "workout", name: "Workout Session", locationId: "gym", cost: 22, happy: 9, energy: 12, hours: 2, icon: "💪", blurb: "Mood and energy boost." },
-  { id: "movie", name: "Catch a Movie", locationId: "cinema", cost: 18, happy: 16, energy: -4, hours: 3, icon: "🎬", blurb: "Classic relaxation." },
-  { id: "stream", name: "Streaming Lounge", locationId: "cinema", cost: 10, happy: 10, energy: -2, hours: 2, icon: "📺", blurb: "Cheap and cheerful." },
-  { id: "night-out", name: "Night Out", locationId: "club", cost: 60, happy: 30, energy: -18, hours: 4, icon: "🪩", blurb: "Huge happiness hit, but it wipes you out." },
+  { id: "bowling", name: "Bowl a Few Frames", locationId: "bowlarama", cost: 22, happy: 9, energy: 12, hours: 2, blurb: "Mood and energy boost." },
+  { id: "movie", name: "Catch a Movie", locationId: "aztec", cost: 18, happy: 16, energy: -4, hours: 3, blurb: "Explosions, one-liners, popcorn." },
+  { id: "matinee", name: "Cartoon Matinee", locationId: "aztec", cost: 10, happy: 10, energy: -2, hours: 2, blurb: "Cheap and cheerful." },
+  { id: "flaming", name: "Flaming Moe", locationId: "moes", cost: 15, happy: 10, energy: -4, hours: 2, blurb: "The house special. Secret recipe." },
+  { id: "night-out", name: "Night Out at Moe's", locationId: "moes", cost: 60, happy: 30, energy: -18, hours: 4, blurb: "Huge happiness hit, but it wipes you out." },
 ];
 
 export function leisureAt(locationId: string): LeisureActivity[] {
@@ -210,10 +193,10 @@ export function leisureAt(locationId: string): LeisureActivity[] {
 
 // Housing ------------------------------------------------------------------
 export const HOMES: Home[] = [
-  { id: "studio", name: "Rented Studio", rent: 180, happyPerWeek: 0, deposit: 0, icon: "🛏️", blurb: "Cramped but cheap. Your starting place." },
-  { id: "apartment", name: "City Apartment", rent: 360, happyPerWeek: 4, deposit: 360, icon: "🏢", blurb: "A comfortable one-bedroom." },
-  { id: "condo", name: "Modern Condo", rent: 680, happyPerWeek: 9, deposit: 680, icon: "🌆", blurb: "Stylish living with a view." },
-  { id: "house", name: "Suburban House", rent: 1150, happyPerWeek: 16, deposit: 1150, icon: "🏡", blurb: "Space, comfort, and status." },
+  { id: "room", name: "Room Above Moe's", rent: 180, happyPerWeek: 0, deposit: 0, blurb: "Cramped, cheap, and it smells like Duff." },
+  { id: "apartment", name: "Springfield Apartment", rent: 360, happyPerWeek: 4, deposit: 360, blurb: "A comfortable one-bedroom." },
+  { id: "condo", name: "Gorge-View Condo", rent: 680, happyPerWeek: 9, deposit: 680, blurb: "Stylish living with a view of Springfield Gorge." },
+  { id: "house", name: "742 Evergreen Terrace", rent: 1150, happyPerWeek: 16, deposit: 1150, blurb: "The dream: a two-car garage, a couch, and Flanders next door." },
 ];
 
 export function getHome(id: string): Home {
@@ -233,3 +216,26 @@ export function getCourse(id: string): Course {
   if (!c) throw new Error(`Unknown course ${id}`);
   return c;
 }
+
+// Ned Flanders -------------------------------------------------------------
+/** Ned's own career ladder, climbed as his credits grow. */
+export const RIVAL_JOBS: { tier: number; reqCredits: number; title: string }[] = [
+  { tier: 1, reqCredits: 0, title: "Leftorium Clerk" },
+  { tier: 2, reqCredits: 1, title: "Leftorium Shift Lead" },
+  { tier: 3, reqCredits: 3, title: "Leftorium Owner" },
+  { tier: 4, reqCredits: 5, title: "Leftorium Franchiser" },
+  { tier: 5, reqCredits: 7, title: "Left-Handed Tycoon" },
+];
+
+export const RIVAL_QUOTES = [
+  "Hi-diddly-ho, neighborino!",
+  "Okily-dokily!",
+  "Well, sweet baby lima beans!",
+  "Hidely-ho! Just popped a little extra in the ol' savings!",
+  "Diddly-darn good week down at the Leftorium!",
+  "Feeling scrumdiddlyumptious today!",
+  "Another course done. Learning is fun-diddly-un!",
+  "Thank you, Lord, for this fine week!",
+  "Mmm-diddly-mmm, Maude's casserole fuels the soul!",
+  "Don't you worry, neighbor, slow and steady wins the race!",
+];

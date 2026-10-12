@@ -1,135 +1,122 @@
-# Fast Lane — Agent Handoff
+# Springfield Fast Lane — Agent Handoff
 
-A modern, 3D reimagining of the 1990 life-sim *Jones in the Fast Lane*. This doc is the
-single source of truth for a new agent picking up the work. Read it fully before editing.
+A Simpsons-themed, 3D cartoon reimagining of the 1990 life-sim *Jones in the Fast Lane*. The
+rival "Jones" is **Ned Flanders** ("Keeping up with the Flanderses"). This doc is the single
+source of truth for a new agent picking up the work. Read it fully before editing.
+
+**IP note:** the user chose real Springfield names/characters. This is a **private, local fan
+game**: never publish, deploy, or distribute it. All art is still original procedural geometry
+(no copied show artwork or logos).
 
 ## Where things are
 - **Project root:** `C:\Users\kozin\OneDrive\Documents\Jones-ITFL`
 - Git repo (local only, branch `main`, no remote). Commit history tells the story.
-- Dev server is usually already running at **http://localhost:5173** (`npm run dev`, hot-reload).
-- Platform: Windows 11, PowerShell. Node/npm/git installed. A **Bash tool** is also available
-  (Git Bash) and is used for the screenshot workflow below.
+- Dev server: `npm run dev` → http://localhost:5173 (hot-reload).
+- Platform: Windows 11, PowerShell. Node/npm/git/python installed. A **Bash tool** (Git Bash) is
+  used for the screenshot workflow below.
 
 ## Run / build
 ```powershell
-cd "C:\Users\kozin\OneDrive\Documents\Jones-ITFL"
 npm install        # three + @types/three already in package.json
 npm run dev        # http://localhost:5173
 npm run build      # tsc && vite build  (MUST pass before committing)
 ```
-Note: `npm run build` prints a harmless PowerShell "NativeCommandError" (npm notices on stderr)
-and a Three.js >500 kB chunk-size warning. Neither is a failure — look for `✓ built`.
+`npm run build` prints a harmless npm-notice NativeCommandError in PowerShell and a Three.js
+>500 kB chunk warning. Neither is a failure — look for `✓ built`.
 
 ## Stack & architecture
 React 18 + TypeScript + Vite. **Three.js** renders the board.
 
 ```
 src/
-  main.tsx                 mounts <App/> inside <GameProvider/>
-  App.tsx                  phase routing (intro / playing / won / lost); renders PortraitDefs,
-                           HUD, CityMap (board), Sidebar, and the location "deed" overlay
-  index.css                ALL styling. CK3-inspired theme via CSS variables in :root
+  main.tsx                 mounts <App/> inside <GameProvider/> (StrictMode: reducer must be pure)
+  App.tsx                  phase routing (intro / playing / won / lost), HUD, board, sidebar, location card
+  index.css                ALL styling: bright cartoon theme (ink outlines, hard shadows, sky + clouds).
+                           Fonts: "Luckiest Guy" (titles) + "Nunito" (body), loaded in index.html
   game/                    framework-free game model (no React)
-    types.ts               domain types; GameState
-    data.ts                ALL content + tuning: LOCATIONS, JOBS, COURSES, ITEMS, FOODS,
-                           LEISURE, HOMES, AVATARS, CONFIG, DEFAULT_GOALS, RING + ring helpers
-    engine.ts              pure reducer + selectors (netWorth, goalProgress, travelCost, endWeek)
-    store.tsx              React context + reducer + localStorage autosave (key fastlane.save.v1)
+    types.ts               domain types; GameState (incl. rival, lostTo, seed)
+    data.ts                ALL content + tuning: LOCATIONS, JOBS, COURSES, ITEMS, FOODS, LEISURE,
+                           HOMES, CONFIG, DEFAULT_GOALS, RING + ring helpers, RIVAL_JOBS, RIVAL_QUOTES
+    engine.ts              pure reducer + selectors (netWorth, goalProgress, rivalProgress, travelCost);
+                           seeded RNG `rand(s)` (mulberry32 over state.seed); endWeek -> rivalWeek
+    store.tsx              React context + reducer + localStorage autosave (key springfield.save.v1)
   components/
     CityMap.tsx            *** the Three.js 3D board *** (biggest/most important file)
-    LocationPanel.tsx      the "Title Deed" card (opens over the board)
-    HUD.tsx                top bar: portrait, clock, stats, End Week button
-    Sidebar.tsx            Life Goals, Condition meters, Activity Log
-    Clock.tsx              analog week-clock SVG (hand sweeps as hours deplete)
-    Icon.tsx               custom gold SVG icon set (no emoji) + locationIcon/itemIcon helpers
-    Portrait.tsx           cameo portrait medallions (avatars) + PortraitDefs
+    LocationPanel.tsx      the location card (opens over the board)
+    HUD.tsx, Sidebar.tsx   top bar; Life Goals, Flanders race card, Condition, Activity Log
+    Clock.tsx              cartoon week-clock SVG
+    Icon.tsx               line-icon set (incl. donut, pin, mug, atom, globe) + location/item icon maps
+    Portrait.tsx           yellow cartoon face SVGs: 8 player avatars (p0..p7) + RivalPortrait (Ned)
   screens/Intro.tsx, screens/GameOver.tsx
 ```
 
 ## Game model (quick map)
 - **Goals:** Wealth (net worth), Career (job tier), Education (credits), Happiness. Win = all four
-  met before `weekLimit`; lose = time runs out.
-- **Time:** weekly hour budget (`CONFIG.hoursPerWeek`). Moving/working/etc. spend hours.
-- **Movement:** the board is a **perimeter ring**. `RING` in `data.ts` is the clockwise cell order
-  (13 locations + a park waypoint). `ringPath(from,to)` / `ringDistance(from,to)` drive movement
-  and travel cost (= spaces moved). Out of time → auto-sent home, week rolls over; `End Week`
-  button and `SLEEP`-from-anywhere are the safety nets.
+  met. Lose = Flanders meets all four first (`lostTo: "rival"`) or weeks run out (`"time"`).
+- **Locations (ids):** home (Evergreen Terrace), employment, university, krusty, trynsave, globex,
+  aztec, moes, bowlarama, kwikemart, lardlad, plant (Nuclear Power Plant, a pure workplace), bank.
+- **Movement:** perimeter ring. `RING` in `data.ts` is the clockwise cell order (13 locations + the
+  Flanders house pass-through cell, `FLANDERS_CELL`). `ringPath`/`ringDistance` drive movement and
+  travel cost.
+- **Flanders:** `state.rival` {cell, worth, credits, careerLevel, happiness, jobTitle, quote}. Each
+  week `rivalWeek()` adds randomized income (`CONFIG.rivalWeeklyIncome`), maybe a course
+  (`CONFIG.rivalStudyChance`), promotions via `RIVAL_JOBS`, cheer, and logs a quote (`kind: "rival"`).
+  On player MOVE he may wander to a random ring cell. Simulated pace: median finish week 22
+  (p10 20, p90 26), so he beats the 24-week limit ~80% of runs. Tune with the two CONFIG knobs.
+- **Reducer purity:** never use `Math.random` in the engine; use `rand(s)`. START takes a `seed`.
 
 ## The 3D board — `components/CityMap.tsx` (READ THIS BEFORE EDITING BUILDINGS)
-One Three.js scene built imperatively in `initScene()`, driven from React via refs.
-Key pieces:
-- **World mapping:** `cellToWorld(gx,gy)`; `tokenWorld(gx,gy)` offsets the token toward the
-  camera (+z) so it stands in front of its building.
-- **Lighting:** HemisphereLight + AmbientLight + a shadow-casting DirectionalLight, ACES tone
-  mapping, and a **PMREM-baked `RoomEnvironment`** (`scene.environment`) for reflections.
-- **Materials look premium via:** rounded geometry (`rb()` = `RoundedBoxGeometry`) + env-mapped
-  `MeshPhysicalMaterial` (clearcoat) and glossy gold/metal/glass. Avoid raw `BoxGeometry` for
-  anything visible — use `rb()`.
-- **Buildings:** `buildBuilding(loc)` returns `{ group, body, topY, halfW }`.
-  - `body` = the main clickable mesh (hover emissive highlight toggles on it); set `body.userData.locId`.
-  - `topY`/`halfW` position the name label and the job star.
-  - There is a `switch (loc.id)` — **each location has its own case**. Helpers available inside:
-    `mkBox(w,h,d,y,mat)`, `flatRoof(w,h,d)`, `door(d)`, `addWindows(...)`, `rb(...)`, `shade(hex,amt)`,
-    and prebuilt materials `bodyMat/roofMat/rimMat/winMat/glassMat/gold/metal/doorMat`.
-- **Token:** a glossy gold game-piece (pawn) that hops the ring space-by-space with an arc; swaps
-  to a car `Icon` when the player owns the car.
-- **Clock plate** (bottom-left) and **billboard name labels** (canvas sprites) overlay the scene.
-- Interaction: raycaster for hover + click; click runs `startWalk()` which tweens along `ringPath`
-  then dispatches `MOVE` and opens the deed.
-
-### Pattern for detailing a building (what we've been doing)
-Replace that location's `case` in the switch with richer original geometry. Keep it recognizable,
-set `body`, and update `topY`/`halfW`. All art is **original/procedural** — do NOT reproduce real
-brand logos or copyrighted designs (generic storefronts only). Look at the committed `gym`,
-`factory`, and `university` cases as the quality bar (plinths, glazed facades with mullions,
-canopies, steps, rooftop HVAC, parapets, signage, towers/domes, etc.).
+- **Look:** `MeshToonMaterial` everywhere via `toon(color)` (3-band gradient map) + `glow(color)` for
+  self-lit bits, rendered through `OutlineEffect` for ink outlines. `noOutline(mat)` opts a material
+  out (signs, clouds). No env map / PBR anymore.
+- **Render passes** (in `tick`): 1) city `scene` (outline effect), 2) clear depth → `tokenScene`
+  (player + Ned, so buildings in the row in front can never hide them; fake blob shadows live in
+  the main scene), 3) `labelScene` (all name-label sprites, moved there after construction; sprites
+  use `sizeAttenuation: false` so they're a constant on-screen size).
+- **Buildings:** `buildBuilding(loc)` returns `{ group, body, topY, halfW }`; one `case` per
+  location id. `body` = main clickable mesh (hover tints its material's emissive). Helpers come from
+  `kit(g)`: `box`, `cyl`, `ball`, `mesh`, `hipRoof`, `mansard`, `win`, `winSide`, `sign` (canvas-text
+  plane), `person` (tiny townsperson). `signMesh()` supports `{bg, fg, stroke, vertical}`.
+  `buildFlandersHouse()` sits on the pass-through cell. Town square has a founder statue + trees.
+- **Tokens:** `makeFigure(look, ringColor)` builds a chunky cartoon character. Player look comes
+  from `TOKEN_LOOK[avatar]` + `avatarShirt(avatar)`; Ned uses `NED_LOOK`.
+- The board waits (≤1.5 s) for the Luckiest Guy font before building so canvas text is correct.
 
 ## Visual verification workflow (IMPORTANT)
 You cannot see the app otherwise. After `npm run build`, serve `dist` and screenshot with headless
-Edge using the **hardware GPU** (`--use-angle=d3d11`). Software WebGL (SwiftShader) renders the
-env-map/physical-material path BLACK — not a bug; always use d3d11.
+Edge using the **hardware GPU** (`--use-angle=d3d11`; SwiftShader renders wrong).
 
-1. Serve (background Bash task): `node node_modules/vite/bin/vite.js preview --port 43XX`
-2. Build a `dist/preview.html` that seeds a playing save into localStorage then loads the hashed
-   JS/CSS from `dist/assets/` (set `location` to the building you want centered; include the Google
-   Fonts `<link>` for Cinzel + EB Garamond). See git history / prior preview.html for the exact save shape.
+1. Serve (background Bash task): `node node_modules/vite/bin/vite.js preview --port 4317 --strictPort`
+2. Write `dist/preview.html` = `dist/index.html` with a `<script>` injected at the top of `<head>` that
+   does `localStorage.setItem('springfield.save.v1', JSON.stringify(state))` (a full GameState incl.
+   `rival`, `lostTo`, `seed`), or `localStorage.clear()` for the intro screen. To open a location
+   card, also append a script that dispatches a `pointerdown` on `.board-canvas canvas` over a building
+   after ~3.5 s, with `location` set to that building.
 3. Screenshot:
 ```
 "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --headless=new --no-sandbox \
-  --use-angle=d3d11 --hide-scrollbars --force-device-scale-factor=1 --window-size=1120,760 \
-  --virtual-time-budget=6000 --user-data-dir="C:/Users/kozin/AppData/Local/Temp/edge-x" \
-  --screenshot="<scratchpad>/shot.png" "http://localhost:43XX/preview.html"
+  --use-angle=d3d11 --hide-scrollbars --force-device-scale-factor=1 --window-size=1280,900 \
+  --virtual-time-budget=8000 --user-data-dir="C:/Users/kozin/AppData/Local/Temp/edge-x" \
+  --screenshot="<scratchpad>/shot.png" "http://localhost:4317/preview.html"
 ```
-4. Read the PNG to view it. Stop the preview server task when done.
-(`npm run build` wipes `dist/`, so recreate `preview.html` after each build.)
+   Delete the `edge-x` profile dir between shots so localStorage doesn't leak.
+4. Read the PNG. Stop the preview server when done. (`npm run build` wipes `dist/`.)
 
 ## Git conventions
-- Commit only when a change builds. Co-author every commit:
-  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+- Commit only when a change builds. End commit messages with the co-author line given in the
+  session's attribution instructions.
 - Do NOT push (no remote) and do not force anything unless asked.
-- **PowerShell gotcha:** `git commit` here-strings break on quotes in the message. Use multiple
-  `-m "..."` flags with no fancy punctuation instead.
+- PowerShell `git commit` here-strings break on quotes; use multiple `-m` flags, or commit from Bash.
 - CRLF/LF warnings on commit are harmless.
 
-## Status — building detail passes
-Done (full realistic detail): **gym, factory, university**.
-Remaining (still the simpler v2 shapes): **bank, hitech, cinema, club, zmart, grocery, cafe,
-burger, employment, home**.
-
-### Next task the user asked for
-Continue the detail pass on the remaining buildings, same quality bar, a couple at a time (or do a
-full sweep and present one combined render). After each: `npm run build`, screenshot via the GPU
-workflow, then commit.
+## Status
+Done: full Springfield conversion (content, cartoon UI, toon 3D board with all 13 landmarks +
+Flanders house, character tokens, Flanders AI rival with race card and loss condition).
 
 ## Backlog / ideas (not started)
-- **Juice pass:** coin-burst particles on earning, SFX (hop / cha-ching / week chime), a confetti
-  win screen, subtle camera ease.
-- **Gameplay:** "Jones" the AI rival (keeping-up-with-the-Joneses head-to-head) + satirical random
-  weekly events (lottery, mugging, tax refund, inflation).
-- **Polish:** per-building color/trim variation; optional brighter "daytime" palette; contact
-  shadows/AO; token could show the player's avatar/color.
-
-## Housekeeping notes
-- Legacy CSS from older board versions (`.iso-*`, `.building`, `.facade`, etc.) and emoji `icon`
-  fields in `data.ts` are now unused but harmless; can be pruned.
-- Three.js makes the JS bundle ~660 kB (fine for local). Could code-split later.
+- **Juice:** coin-burst on earning, SFX (hop, cha-ching, "D'oh!"-style stings), confetti win screen.
+- **Gameplay:** satirical random weekly events (Mr. Burns layoffs, Lottery, Duff Days, a
+  Kwik-E-Mart robbery); balance pass on how winnable 22 weeks is; difficulty setting for Ned's pace.
+- **Polish:** the player's car ("The Homer") could swap the token for a car; Ned could walk the ring
+  path rather than gliding straight; labels could fade when the location card is open.
+- Three.js makes the JS bundle ~700 kB (fine for local). Could code-split later.

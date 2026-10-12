@@ -1,19 +1,19 @@
-// ---- Core domain types for the Fast Lane life sim ----
+// ---- Core domain types for the Springfield life sim ----
 
 export type LocationId =
   | "home"
   | "employment"
-  | "factory"
-  | "burger"
-  | "cafe"
+  | "plant"
+  | "krusty"
+  | "lardlad"
   | "university"
   | "bank"
-  | "zmart"
-  | "hitech"
-  | "grocery"
-  | "gym"
-  | "cinema"
-  | "club";
+  | "trynsave"
+  | "globex"
+  | "kwikemart"
+  | "bowlarama"
+  | "aztec"
+  | "moes";
 
 export type LocationCategory =
   | "home"
@@ -31,7 +31,6 @@ export interface Location {
   short: string;
   category: LocationCategory;
   blurb: string;
-  icon: string;
   /** grid position on the city map (col,row), used for travel time */
   x: number;
   y: number;
@@ -68,7 +67,6 @@ export interface ShopItem {
   happy: number; // one-time happiness bump + ongoing comfort
   wealth: number; // net-worth value retained
   category: ItemCategory;
-  icon: string;
   blurb: string;
 }
 
@@ -80,7 +78,6 @@ export interface FoodItem {
   energy: number;
   happy: number;
   hours: number;
-  icon: string;
 }
 
 export interface LeisureActivity {
@@ -91,7 +88,6 @@ export interface LeisureActivity {
   happy: number;
   energy: number;
   hours: number;
-  icon: string;
   blurb: string;
 }
 
@@ -102,7 +98,6 @@ export interface Home {
   happyPerWeek: number;
   deposit: number; // one-time move-in cost
   blurb: string;
-  icon: string;
 }
 
 export interface Goals {
@@ -116,10 +111,22 @@ export interface LogEntry {
   id: number;
   week: number;
   text: string;
-  kind: "info" | "good" | "bad" | "money";
+  kind: "info" | "good" | "bad" | "money" | "rival";
 }
 
 export type Phase = "intro" | "playing" | "won" | "lost";
+
+/** Ned Flanders, the AI neighbour racing you to the same four life goals. */
+export interface Rival {
+  /** index into RING where his token stands (his house is the pass-through cell) */
+  cell: number;
+  worth: number;
+  credits: number;
+  careerLevel: number;
+  happiness: number;
+  jobTitle: string;
+  quote: string;
+}
 
 export interface GameState {
   phase: Phase;
@@ -150,4 +157,10 @@ export interface GameState {
   playerName: string;
   avatar: string; // the player's chosen face
   stats: { weeksWorked: number; totalEarned: number };
+
+  rival: Rival;
+  /** how the game ended: ran out of weeks, or Flanders got there first */
+  lostTo: "time" | "rival" | null;
+  /** seeded RNG state, so the reducer stays pure (StrictMode double-invokes it) */
+  seed: number;
 }

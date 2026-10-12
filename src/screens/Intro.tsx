@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useGame } from "../game/store";
-import { AVATARS, CONFIG, DEFAULT_GOALS } from "../game/data";
-import { Portrait } from "../components/Portrait";
+import { CONFIG, DEFAULT_GOALS } from "../game/data";
+import { AVATAR_IDS as AVATARS, Portrait, avatarName } from "../components/Portrait";
 
 export default function Intro() {
   const { dispatch } = useGame();
@@ -11,12 +11,14 @@ export default function Intro() {
   return (
     <div className="center-stage">
       <div className="hero">
-        <div className="kicker">Keeping up with the Joneses</div>
-        <h1>Fast Lane</h1>
+        <div className="kicker">Keeping up with the Flanderses</div>
+        <h1>
+          Springfield <span>Fast Lane</span>
+        </h1>
         <p>
-          A modern life sim inspired by the 1990 classic. You've got {CONFIG.weekLimit} weeks to build
-          wealth, climb a career, earn your education, and actually be happy. Work, study, shop, invest,
-          and manage your time — the clock never stops.
+          You've got {CONFIG.weekLimit} weeks to build wealth, climb a career, earn your education, and
+          actually be happy. Ned Flanders next door is chasing the same goals. Beat him to all four, or
+          it's "Stupid Flanders" for the rest of your life.
         </p>
 
         <div className="avatar-pick">
@@ -30,7 +32,8 @@ export default function Intro() {
                 type="button"
                 className={"avatar-opt" + (a === avatar ? " sel" : "")}
                 onClick={() => setAvatar(a)}
-                aria-label={"Choose portrait " + a}
+                aria-label={"Choose " + avatarName(a)}
+                title={avatarName(a)}
               >
                 <Portrait id={a} size={44} />
               </button>
@@ -42,7 +45,7 @@ export default function Intro() {
           className="name-row"
           onSubmit={(e) => {
             e.preventDefault();
-            dispatch({ type: "START", name, avatar });
+            dispatch({ type: "START", name, avatar, seed: Date.now() });
           }}
         >
           <input
@@ -53,7 +56,7 @@ export default function Intro() {
             autoFocus
           />
           <button className="btn" type="submit">
-            Start →
+            Start
           </button>
         </form>
 

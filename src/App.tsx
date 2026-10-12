@@ -40,7 +40,7 @@ export default function App() {
         </div>
 
         <div className="footer-note">
-          Fast Lane — a homage to Jones in the Fast Lane ·{" "}
+          Springfield Fast Lane · a fan-made homage to Jones in the Fast Lane ·{" "}
           <button
             onClick={() => {
               if (confirm("Abandon this life and start over?")) dispatch({ type: "RESET" });

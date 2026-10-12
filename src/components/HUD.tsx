@@ -14,7 +14,7 @@ export default function HUD() {
         </span>
         <div className="player-meta">
           <span className="player-name">{state.playerName}</span>
-          <span className="player-tag">Fast Lane</span>
+          <span className="player-tag">Springfield</span>
         </div>
       </div>
 

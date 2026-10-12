@@ -1,15 +1,19 @@
 import {
   CONFIG,
   DEFAULT_GOALS,
+  FLANDERS_CELL,
   FOODS,
   LEISURE,
+  RING,
+  RIVAL_JOBS,
+  RIVAL_QUOTES,
   getCourse,
   getHome,
   getItem,
   getJob,
   ringDistance,
 } from "./data";
-import type { GameState, Goals, LocationId, LogEntry } from "./types";
+import type { GameState, Goals, LocationId, LogEntry, Rival } from "./types";
 
 function getFood(id: string) {
   const f = FOODS.find((x) => x.id === id);
@@ -23,7 +27,7 @@ function getLeisure(id: string) {
 }
 
 export type GameAction =
-  | { type: "START"; name: string; avatar: string }
+  | { type: "START"; name: string; avatar: string; seed: number }
   | { type: "RESET" }
   | { type: "MOVE"; to: LocationId }
   | { type: "WORK"; hours: number }
@@ -43,6 +47,16 @@ const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 let logSeq = 0;
+
+/** mulberry32 over the state's seed: deterministic, so the reducer stays pure. */
+function rand(s: GameState): number {
+  s.seed = (s.seed + 0x6d2b79f5) | 0;
+  let t = s.seed;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const pick = <T,>(s: GameState, list: T[]): T => list[Math.floor(rand(s) * list.length)];
 
 /** Keep new log ids above anything in a restored save (avoids key collisions). */
 export function seedLogSeq(entries: LogEntry[]) {
@@ -64,7 +78,7 @@ export function initialState(): GameState {
     credits: 0,
     jobId: null,
     careerLevel: 0,
-    homeId: "studio",
+    homeId: "room",
     ownedItems: [],
     hasWardrobe: false,
     location: "home",
@@ -73,6 +87,21 @@ export function initialState(): GameState {
     playerName: "You",
     avatar: "p0",
     stats: { weeksWorked: 0, totalEarned: 0 },
+    rival: initialRival(),
+    lostTo: null,
+    seed: 1,
+  };
+}
+
+function initialRival(): Rival {
+  return {
+    cell: FLANDERS_CELL,
+    worth: 400,
+    credits: 0,
+    careerLevel: 1,
+    happiness: 60,
+    jobTitle: RIVAL_JOBS[0].title,
+    quote: RIVAL_QUOTES[0],
   };
 }
 
@@ -97,6 +126,61 @@ export function goalsMet(s: GameState): boolean {
     s.credits >= s.goals.education &&
     s.careerLevel >= s.goals.career
   );
+}
+
+export function rivalProgress(s: GameState): Record<keyof Goals, number> {
+  const r = s.rival;
+  return {
+    wealth: clamp((r.worth / s.goals.wealth) * 100),
+    happiness: clamp((r.happiness / s.goals.happiness) * 100),
+    education: clamp((r.credits / s.goals.education) * 100),
+    career: clamp((r.careerLevel / s.goals.career) * 100),
+  };
+}
+
+function rivalGoalsMet(s: GameState): boolean {
+  const r = s.rival;
+  return (
+    r.worth >= s.goals.wealth &&
+    r.happiness >= s.goals.happiness &&
+    r.credits >= s.goals.education &&
+    r.careerLevel >= s.goals.career
+  );
+}
+
+/** Ned's week: steady income, the odd course, the odd donation, relentless cheer. */
+function rivalWeek(s: GameState) {
+  const r = s.rival;
+  const notes: string[] = [];
+  let quote = pick(s, RIVAL_QUOTES);
+
+  let gain = Math.round(CONFIG.rivalWeeklyIncome * (0.6 + rand(s) * 0.8));
+  if (rand(s) < 0.12) {
+    gain -= 250;
+    notes.push("gave a big donation to the church");
+    quote = "The Lord loveth a cheerful giver!";
+  }
+  r.worth += gain;
+
+  if (rand(s) < CONFIG.rivalStudyChance) {
+    r.credits += 1;
+    notes.push(`finished a Bible-studies course (${r.credits} credits)`);
+  }
+
+  const job = [...RIVAL_JOBS].reverse().find((j) => r.credits >= j.reqCredits)!;
+  if (job.tier > r.careerLevel) {
+    r.careerLevel = job.tier;
+    r.jobTitle = job.title;
+    notes.push(`got promoted to ${job.title}`);
+    quote = "Promoted? Well, hot diggity dog!";
+  }
+
+  r.happiness = clamp(r.happiness + 1.5 + rand(s) * 3.5);
+  r.cell = FLANDERS_CELL;
+  r.quote = quote;
+
+  const did = notes.length ? `Ned ${notes.join(" and ")}. ` : "";
+  log(s, `${did}"${quote}"`, "rival");
 }
 
 export function travelCost(s: GameState, to: LocationId): number {
@@ -155,16 +239,23 @@ function endWeek(s: GameState) {
     log(s, "You're running on empty — eat more next week.", "bad");
   }
 
+  rivalWeek(s);
+
   s.week += 1;
   s.hours = s.hoursPerWeek;
   s.location = "home";
 
   if (goalsMet(s)) {
     s.phase = "won";
-    log(s, "🎉 You hit every life goal. You made it to the fast lane!", "good");
+    log(s, "Woo-hoo! You hit every life goal before Flanders did.", "good");
+  } else if (rivalGoalsMet(s)) {
+    s.phase = "lost";
+    s.lostTo = "rival";
+    log(s, "Ned Flanders hit every goal first. Stupid Flanders.", "bad");
   } else if (s.week > s.weekLimit) {
     s.phase = "lost";
-    log(s, "⏳ Time's up. The clock ran out on your goals.", "bad");
+    s.lostTo = "time";
+    log(s, "D'oh! Time's up. The clock ran out on your goals.", "bad");
   } else {
     log(s, `— Week ${s.week} begins —`, "info");
   }
@@ -177,8 +268,9 @@ export function reducer(state: GameState, action: GameAction): GameState {
     const s = initialState();
     s.phase = "playing";
     s.playerName = action.name.trim() || "You";
-    s.avatar = action.avatar || "🧑";
-    log(s, `Week 1. ${s.playerName} rolls into town with $${s.cash} and big dreams. Time to keep up with the Joneses.`, "info");
+    s.avatar = action.avatar || "p0";
+    s.seed = action.seed | 0;
+    log(s, `Week 1. ${s.playerName} rolls into Springfield with $${s.cash} and big dreams. Next door, Ned Flanders is already up and at 'em.`, "info");
     return s;
   }
 
@@ -189,6 +281,7 @@ export function reducer(state: GameState, action: GameAction): GameState {
     log: state.log,
     goals: state.goals,
     stats: { ...state.stats },
+    rival: { ...state.rival },
   };
 
   switch (action.type) {
@@ -200,13 +293,15 @@ export function reducer(state: GameState, action: GameAction): GameState {
       }
       s.hours = round1(s.hours - cost);
       s.location = action.to;
+      // Ned's out and about too
+      if (rand(s) < 0.4) s.rival.cell = Math.floor(rand(s) * RING.length);
       break;
     }
 
     case "WORK": {
       const job = s.jobId ? getJob(s.jobId) : null;
       if (!job) {
-        log(s, "You don't have a job yet. Visit the Careers Hub.", "bad");
+        log(s, "You don't have a job yet. Visit the Employment Office.", "bad");
         break;
       }
       if (s.location !== job.locationId) break;
@@ -238,7 +333,7 @@ export function reducer(state: GameState, action: GameAction): GameState {
         break;
       }
       if (job.reqWardrobe && !s.hasWardrobe) {
-        log(s, `${job.title} requires a professional wardrobe (buy one at Z-Mart).`, "bad");
+        log(s, `${job.title} requires a professional wardrobe (buy one at Try-N-Save).`, "bad");
         break;
       }
       if (s.jobId === job.id) {

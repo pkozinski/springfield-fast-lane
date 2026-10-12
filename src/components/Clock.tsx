@@ -19,7 +19,7 @@ export default function Clock({
   const hx = cx + (R - 5) * Math.sin(ang);
   const hy = cy - (R - 5) * Math.cos(ang);
 
-  // remaining-time arc (gold), from the hand back to 12 o'clock
+  // remaining-time arc, from the hand back to 12 o'clock
   const remFrac = 1 - frac;
   const startAng = ang;
   const endAng = 2 * Math.PI - 1e-4;
@@ -42,8 +42,8 @@ export default function Clock({
         y1={cy - r1 * Math.cos(a)}
         x2={cx + R * Math.sin(a)}
         y2={cy - R * Math.cos(a)}
-        stroke={major ? "#e9cf86" : "#8a6d2f"}
-        strokeWidth={major ? 1.6 : 1}
+        stroke="#1d1a17"
+        strokeWidth={major ? 2 : 1.1}
       />
     );
   }
@@ -51,18 +51,16 @@ export default function Clock({
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
       {/* case */}
-      <circle cx={cx} cy={cy} r={R + 4} fill="#1a140b" stroke="#0c0906" strokeWidth="2" />
-      <circle cx={cx} cy={cy} r={R + 4} fill="none" stroke="#c9a24b" strokeWidth="1.5" />
+      <circle cx={cx} cy={cy} r={R + 5} fill="#fed90f" stroke="#1d1a17" strokeWidth="2.5" />
       {/* face */}
-      <circle cx={cx} cy={cy} r={R} fill="#0f0b06" />
+      <circle cx={cx} cy={cy} r={R} fill="#fffdf3" stroke="#1d1a17" strokeWidth="1.5" />
       {remFrac > 0.001 && (
         <path
           d={`M ${ax0} ${ay0} A ${arcR} ${arcR} 0 ${largeArc} 1 ${ax1} ${ay1}`}
           fill="none"
-          stroke={low ? "#cf6a55" : "#c9a24b"}
-          strokeWidth="3"
+          stroke={low ? "#ef4b3c" : "#7cc4f2"}
+          strokeWidth="4"
           strokeLinecap="round"
-          opacity="0.55"
         />
       )}
       {ticks}
@@ -72,11 +70,11 @@ export default function Clock({
         y1={cy}
         x2={hx}
         y2={hy}
-        stroke={low ? "#e0806e" : "#ecd38c"}
-        strokeWidth="2.4"
+        stroke={low ? "#d62f22" : "#1d1a17"}
+        strokeWidth="3"
         strokeLinecap="round"
       />
-      <circle cx={cx} cy={cy} r="2.6" fill="#ecd38c" stroke="#7a5f26" />
+      <circle cx={cx} cy={cy} r="3" fill="#ef4b3c" stroke="#1d1a17" strokeWidth="1.2" />
     </svg>
   );
 }

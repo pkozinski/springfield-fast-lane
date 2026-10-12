@@ -1,6 +1,6 @@
 import type { Location } from "../game/types";
 
-/** A small, cohesive line-icon set drawn in currentColor (so it inherits gold). */
+/** A small, cohesive line-icon set drawn in currentColor. */
 const PATHS: Record<string, JSX.Element> = {
   home: (
     <>
@@ -144,6 +144,40 @@ const PATHS: Record<string, JSX.Element> = {
     />
   ),
   moon: <path d="M15.5 3A9 9 0 1 0 21 14.5 7 7 0 0 1 15.5 3Z" />,
+  donut: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.8" />
+      <path d="M7.5 8.5l1 .8M15.5 7.2l-.6 1.1M17 13.5l-1.1.3M9 16.2l.8-.9M13.2 17l-.2-1.1" />
+    </>
+  ),
+  pin: (
+    <>
+      <path d="M12 3c-1.6 0-2.2 1.4-2 3 .2 1.2.9 1.8.9 2.6-.1 1.3-2.4 3.4-2.4 6.6 0 3 1.6 5.8 3.5 5.8s3.5-2.8 3.5-5.8c0-3.2-2.3-5.3-2.4-6.6 0-.8.7-1.4.9-2.6.2-1.6-.4-3-2-3Z" />
+      <path d="M10.3 10h3.4" />
+    </>
+  ),
+  mug: (
+    <>
+      <path d="M5 7h10v12.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 5 19.5Z" />
+      <path d="M15 10h2.2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H15" />
+      <path d="M5 7c0-2.5 2-3 3.4-2.2C9.6 3.4 13 3.6 13.6 5.4 15 5 16 6 15 7" />
+    </>
+  ),
+  atom: (
+    <>
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <ellipse cx="12" cy="12" rx="9" ry="3.6" />
+      <ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(60 12 12)" />
+      <ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-60 12 12)" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17M12 3.5c2.6 2.4 3.6 5.2 3.6 8.5s-1 6.1-3.6 8.5c-2.6-2.4-3.6-5.2-3.6-8.5s1-6.1 3.6-8.5Z" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof PATHS;
@@ -179,15 +213,15 @@ const LOCATION_ICON: Record<string, IconName> = {
   employment: "briefcase",
   university: "book",
   bank: "bank",
-  factory: "factory",
-  burger: "food",
-  cafe: "cup",
-  zmart: "cart",
-  hitech: "monitor",
-  grocery: "cart",
-  gym: "dumbbell",
-  cinema: "film",
-  club: "music",
+  plant: "atom",
+  krusty: "food",
+  lardlad: "donut",
+  trynsave: "cart",
+  globex: "globe",
+  kwikemart: "cart",
+  bowlarama: "pin",
+  aztec: "film",
+  moes: "mug",
 };
 
 export function locationIcon(loc: Location): IconName {
@@ -209,7 +243,7 @@ export function itemIcon(category: string): IconName {
 }
 
 export function leisureIcon(id: string): IconName {
-  if (id === "workout") return "dumbbell";
-  if (id === "night-out") return "music";
+  if (id === "bowling") return "pin";
+  if (id === "night-out" || id === "flaming") return "mug";
   return "film";
 }

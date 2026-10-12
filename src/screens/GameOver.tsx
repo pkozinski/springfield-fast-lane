@@ -5,6 +5,7 @@ export default function GameOver() {
   const { state, dispatch } = useGame();
   const won = state.phase === "won";
   const worth = netWorth(state);
+  const beaten = state.lostTo === "rival";
 
   const cells = [
     { label: "Net worth", value: `$${worth.toLocaleString()}` },
@@ -19,13 +20,15 @@ export default function GameOver() {
     <div className="center-stage">
       <div className="hero">
         <div className="kicker">{won ? "You made it" : "Game over"}</div>
-        <h1>{won ? "🏁 Winner" : "Time's Up"}</h1>
+        <h1>{won ? "Woo-hoo!" : beaten ? "Stupid Flanders" : "D'oh!"}</h1>
         <p>
           {won
-            ? `${state.playerName} hit every life goal and reached the fast lane. Nicely played.`
-            : `${state.playerName} ran out of weeks. ${
-                goalsMet(state) ? "" : "Not every goal was met this time — the city's still here for another run."
-              }`}
+            ? `${state.playerName} hit every life goal before Ned Flanders did. Take that, neighborino.`
+            : beaten
+              ? `Ned Flanders hit all four goals first. "Better luck next time, neighbor!" he says, sincerely. Ugh.`
+              : `${state.playerName} ran out of weeks. ${
+                  goalsMet(state) ? "" : "Not every goal was met this time, but Springfield's still here for another run."
+                }`}
         </p>
 
         <div className="result-grid">

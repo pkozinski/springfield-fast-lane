@@ -3,6 +3,7 @@ import { useGame } from "../game/store";
 import {
   COURSES,
   HOMES,
+  JOBS,
   foodsAt,
   getHome,
   getJob,
@@ -80,14 +81,7 @@ function Employment() {
   const { state, dispatch } = useGame();
   return (
     <div className="action-list">
-      {jobsAt("burger")
-        .concat(
-          jobsAt("zmart"),
-          jobsAt("factory"),
-          jobsAt("cafe"),
-          jobsAt("bank"),
-          jobsAt("hitech")
-        )
+      {[...JOBS]
         .sort((a, b) => a.tier - b.tier)
         .map((job) => {
           const eduOk = state.credits >= job.reqCredits;
@@ -166,7 +160,7 @@ function Shop({ location }: { location: Location }) {
             key={it.id}
             icon={<Icon name={itemIcon(it.category)} />}
             title={it.name}
-            sub={`+${it.happy} happiness${it.id === "car" ? " · halves travel" : ""} · ${it.blurb}`}
+            sub={`+${it.happy} happiness · ${it.blurb}`}
             tags={owned ? <span className="tag owned">Owned</span> : undefined}
           >
             <button
@@ -281,7 +275,7 @@ function Home() {
     <div className="action-list">
       <Row
         icon={<Icon name="moon" />}
-        title="Sleep & end the week"
+        title="Hit the hay & end the week"
         sub="Recover energy, collect pay, then rent and interest are settled."
       >
         <button className="btn" onClick={() => dispatch({ type: "SLEEP" })}>
@@ -331,7 +325,7 @@ export default function LocationPanel({
           <Icon name={locationIcon(location)} size={26} strokeWidth={1.7} />
         </span>
         <div className="deed-title">
-          <span className="deed-kicker">Title Deed</span>
+          <span className="deed-kicker">Springfield</span>
           <h2>{location.name}</h2>
         </div>
         <button className="deed-close" onClick={onBack} aria-label="Done">
@@ -374,8 +368,8 @@ function WorkplaceEmptyState({ location }: { location: Location }) {
       {openings.length > 0
         ? `${location.name} is hiring (${openings
             .map((j) => j.title)
-            .join(", ")}). Apply at the Careers Hub, then come back to clock in.`
-        : "You don't work here. Find a job at the Careers Hub."}
+            .join(", ")}). Apply at the Employment Office, then come back to clock in.`
+        : "You don't work here. Find a job at the Employment Office."}
     </p>
   );
 }
