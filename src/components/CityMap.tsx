@@ -24,10 +24,16 @@ const TITLE_FONT = `"Luckiest Guy", "Arial Black", Impact, sans-serif`;
 
 const cellToWorld = (gx: number, gy: number) =>
   new THREE.Vector3((gx - (COLS - 1) / 2) * SP, 0, (gy - (ROWS - 1) / 2) * SP);
-/** Tokens stand just in front of their building from the camera's view (offset toward camera, +z). */
+/** Half-extents of the inner walkway loop that runs around the town square. */
+const INNER_X = ((COLS - 1) / 2) * SP - 1.0;
+const INNER_Z = ((ROWS - 1) / 2) * SP - 1.0;
+/** Tokens stand on the inner walkway, on the square side of their building, so every
+    walk follows the loop around the square (corner cells sit on the loop's corners). */
 const tokenWorld = (gx: number, gy: number) => {
   const p = cellToWorld(gx, gy);
-  return new THREE.Vector3(p.x, 0, p.z + 1.0);
+  const x = gx === 0 ? -INNER_X : gx === COLS - 1 ? INNER_X : p.x;
+  const z = gy === 0 ? -INNER_Z : gy === ROWS - 1 ? INNER_Z : p.z;
+  return new THREE.Vector3(x, 0, z);
 };
 
 /* ---- materials ------------------------------------------------------------ */
@@ -1124,6 +1130,21 @@ function initScene(
     scene.add(tile);
   });
 
+  // the walkway loop around the square that tokens walk along
+  const pathMat = toon("#efe6cf");
+  const pathW = 0.5;
+  for (const [x, z, w, d] of [
+    [0, -INNER_Z, 2 * INNER_X + pathW, pathW],
+    [0, INNER_Z, 2 * INNER_X + pathW, pathW],
+    [-INNER_X, 0, pathW, 2 * INNER_Z + pathW],
+    [INNER_X, 0, pathW, 2 * INNER_Z + pathW],
+  ]) {
+    const strip = new THREE.Mesh(rb(w, 0.05, d, 0.02), pathMat);
+    strip.position.set(x, 0.045, z);
+    strip.receiveShadow = true;
+    scene.add(strip);
+  }
+
   // town square: plaza + the founder's statue
   const plazaZ = (1.5 - (ROWS - 1) / 2) * SP;
   const plaza = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.75, 0.07, 40), toon("#efe2bd"));
@@ -1261,7 +1282,12 @@ function initScene(
     const cell = s.rival?.cell ?? FLANDERS_CELL;
     const p = tokenWorld(RING[cell].x, RING[cell].y);
     // share the space politely when you're both at the same spot
-    if (cell === curIndex) p.x += 0.5;
+    if (cell === curIndex) {
+      // step aside along the walkway
+      const c = RING[cell];
+      if (c.y === 0 || c.y === ROWS - 1) p.x += 0.5;
+      else p.z += 0.5;
+    }
     nedTarget.copy(p);
     if (snap) ned.position.copy(p);
   }
