@@ -260,7 +260,7 @@ function kit(g: THREE.Group) {
 function buildBuilding(loc: Location) {
   const g = new THREE.Group();
   g.userData.locId = loc.id;
-  const { mesh, box, cyl, ball, hipRoof, mansard, win, winSide, sign, person } = kit(g);
+  const { mesh, box, cyl, ball, hipRoof, gable, mansard, win, winSide, sign, person } = kit(g);
 
   // common palette
   const white = toon("#fbfaf4");
@@ -280,58 +280,89 @@ function buildBuilding(loc: Location) {
   switch (loc.id) {
     /* -------- 742 Evergreen Terrace -------- */
     case "home": {
-      /* 742 Evergreen Terrace: pink-orange two-storey, arched front door between two
-         ground-floor bay windows, hip roof, attached garage with a wall-coloured door */
-      const wall = toon("#f2a07b");
-      const wallDk = toon("#e08a66");
-      const roof = toon("#7d4b3c");
-      const trim = toon("#fbfaf4");
-      const brick = toon("#a9483a");
-      const door = toon("#8a5a34");
-      const hx = 0.24;
-      const w = 1.06, h = 1.0, d = 0.84;
+      /* 742 Evergreen Terrace, after the show's establishing shot: peach two-storey under a
+         brown hip roof with a grey eave band, two double windows upstairs, a coral arched
+         door between two bay windows with brown domed caps, chimney on the left, TV antenna,
+         and a front-gabled garage on the right with the pink sedan in the driveway */
+      const wall = toon("#f4b98e");
+      const roof = toon("#8b5a2b");
+      const eave = toon("#8f8f8f");
+      const brown = toon("#7a4a2a");
+      const teal = toon("#82d8cc", { emissive: "#2f8f86", emissiveIntensity: 0.2 });
+      const curtain = toon("#4fb3a6");
+      const chimney = toon("#e8a77c");
+      const brick = toon("#c46a3c");
+      const hx = -0.2;
+      const w = 1.14, h = 1.0, d = 0.82;
       const fz = d / 2;
       body = box(w, h, d, hx, h / 2, 0, wall, 0.03);
-      box(w + 0.02, 0.06, d + 0.02, hx, 0.03, 0, trim, 0.01);
-      hipRoof(w + 0.18, d + 0.18, 0.46, hx, h, 0, roof);
-      box(w + 0.1, 0.05, d + 0.1, hx, h + 0.01, 0, trim, 0.01);
-      // arched front door in the middle, with steps
-      box(0.2, 0.34, 0.04, hx, 0.19, fz + 0.01, door, 0.02);
-      const arch = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 16, 1, false, -Math.PI / 2, Math.PI), door, hx, 0.36, fz + 0.01);
-      arch.rotation.x = Math.PI / 2;
-      const archTrim = mesh(new THREE.TorusGeometry(0.115, 0.018, 6, 16, Math.PI), trim, hx, 0.36, fz + 0.03);
-      void archTrim;
-      ball(0.016, hx + 0.06, 0.2, fz + 0.04, toon("#f2c14e"), 8);
-      for (let st = 0; st < 2; st++) box(0.32 - st * 0.06, 0.04, 0.12, hx, 0.02 + st * 0.04, fz + 0.1 - st * 0.04, concrete, 0.01);
-      // two bay windows flanking the door
-      for (const bx of [-0.3, 0.3]) {
-        const x = hx + bx;
-        box(0.32, 0.36, 0.14, x, 0.24, fz + 0.06, wallDk, 0.02);
-        box(0.26, 0.24, 0.03, x, 0.27, fz + 0.135, glass, 0.01);
-        for (const mx of [-0.065, 0.065]) box(0.018, 0.24, 0.035, x + mx, 0.27, fz + 0.145, trim, 0.004);
-        box(0.36, 0.05, 0.18, x, 0.44, fz + 0.07, roof, 0.015);
-        box(0.3, 0.03, 0.04, x, 0.13, fz + 0.14, trim, 0.008);
+      box(w + 0.2, 0.06, d + 0.2, hx, h + 0.01, 0, eave, 0.01);
+      hipRoof(w + 0.26, d + 0.26, 0.42, hx, h + 0.04, 0, roof);
+      // chimney on the left gable end + TV antenna
+      box(0.16, 0.95, 0.16, hx - w / 2 + 0.16, h + 0.1, -0.2, chimney, 0.02);
+      box(0.18, 0.06, 0.18, hx - w / 2 + 0.16, h + 0.58, -0.2, brick, 0.02);
+      cyl(0.008, 0.008, 0.36, hx - 0.05, h + 0.42, -0.05, ink, 6);
+      for (const [y, l] of [[0.56, 0.18], [0.5, 0.12]]) box(l, 0.01, 0.01, hx - 0.05, h + y, -0.05, ink, 0.003);
+      // upstairs: two double windows with teal glass and curtains
+      for (const ux of [-0.28, 0.28]) {
+        const x = hx + ux;
+        box(0.4, 0.22, 0.03, x, 0.78, fz, brown, 0.01);
+        box(0.37, 0.19, 0.035, x, 0.78, fz + 0.01, teal, 0.01);
+        box(0.015, 0.19, 0.04, x, 0.78, fz + 0.015, brown, 0.003);
+        for (const cx2 of [-0.16, 0.16]) box(0.04, 0.17, 0.02, x + cx2, 0.78, fz + 0.03, curtain, 0.006);
       }
-      // upstairs windows with white frames
-      for (const ux of [-0.32, 0, 0.32]) win(0.2, 0.22, hx + ux, 0.75, fz, frame, glass);
-      winSide(0.22, 0.22, hx + w / 2, 0.75, -0.1, frame, glass);
-      winSide(0.22, 0.22, hx + w / 2, 0.28, -0.1, frame, glass);
-      // chimney on the right
-      box(0.14, 0.7, 0.16, hx + w / 2 - 0.16, h + 0.2, -0.12, brick, 0.02);
-      // attached garage on the left: same pink-orange, wall-coloured door
-      const gx = -0.6;
-      box(0.6, 0.6, 0.8, gx, 0.3, 0.02, wall, 0.03);
-      hipRoof(0.72, 0.92, 0.26, gx, 0.6, 0.02, roof);
-      box(0.48, 0.42, 0.04, gx, 0.22, 0.43, wallDk, 0.02);
-      for (let i = 1; i <= 3; i++) box(0.46, 0.012, 0.02, gx, 0.03 + i * 0.1, 0.455, wall, 0.004);
-      box(0.52, 0.025, 0.42, gx, 0.012, 0.64, concrete, 0.01);
-      // front walk, hedge, mailbox
-      box(0.14, 0.02, 0.32, hx, 0.01, fz + 0.32, concrete, 0.005);
-      box(0.24, 0.12, 0.1, hx + 0.36, 0.06, fz + 0.24, toon("#4f9a3c"));
-      cyl(0.012, 0.012, 0.2, hx - 0.36, 0.1, fz + 0.42, ink, 6);
-      box(0.08, 0.06, 0.1, hx - 0.36, 0.22, fz + 0.42, toon("#4a7bd0"), 0.02);
-      topY = h + 0.6;
-      halfW = 0.78;
+      // coral arched front door in a brown arch, with a step
+      const door = toon("#e57a6a");
+      box(0.2, 0.3, 0.04, hx, 0.17, fz + 0.01, door, 0.02);
+      const archTop = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 18, 1, false, -Math.PI / 2, Math.PI), door, hx, 0.32, fz + 0.01);
+      archTop.rotation.x = Math.PI / 2;
+      const archTrim = mesh(new THREE.TorusGeometry(0.115, 0.022, 6, 18, Math.PI), brown, hx, 0.32, fz + 0.03);
+      void archTrim;
+      for (const sx of [-0.115, 0.115]) box(0.035, 0.32, 0.04, hx + sx, 0.16, fz + 0.03, brown, 0.008);
+      ball(0.016, hx - 0.06, 0.18, fz + 0.04, toon("#c9b6e8"), 8);
+      box(0.3, 0.04, 0.14, hx, 0.02, fz + 0.08, concrete, 0.01);
+      // two bay windows with brown domed caps
+      for (const bx of [-0.36, 0.36]) {
+        const x = hx + bx;
+        box(0.34, 0.3, 0.12, x, 0.24, fz + 0.05, brown, 0.02);
+        box(0.3, 0.26, 0.03, x, 0.24, fz + 0.105, teal, 0.01);
+        for (const mx of [-0.09, 0, 0.09]) box(0.014, 0.26, 0.035, x + mx, 0.24, fz + 0.115, brown, 0.003);
+        box(0.3, 0.014, 0.035, x, 0.26, fz + 0.115, brown, 0.003);
+        const cap = mesh(new THREE.SphereGeometry(0.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), roof, x, 0.39, fz + 0.04);
+        cap.scale.set(0.9, 0.55, 0.55);
+      }
+      // garage on the right: front-facing gable, little cross window, peach door
+      const gx = 0.66;
+      const gw = 0.62, gh = 0.62, gd = 0.86;
+      box(gw, gh, gd, gx, gh / 2, 0.02, wall, 0.03);
+      box(0.3, 0.12, 0.6, gx - gw / 2 - 0.1, h - 0.1, -0.08, roof, 0.02);
+      gable(gw + 0.14, gd + 0.1, 0.32, gx, gh, 0.02, roof, false);
+      box(0.11, 0.1, 0.03, gx, gh + 0.11, gd / 2 + 0.05, brown, 0.01);
+      box(0.09, 0.08, 0.03, gx, gh + 0.11, gd / 2 + 0.06, teal, 0.01);
+      box(0.012, 0.08, 0.035, gx, gh + 0.11, gd / 2 + 0.065, brown, 0.003);
+      box(0.09, 0.012, 0.035, gx, gh + 0.11, gd / 2 + 0.065, brown, 0.003);
+      box(0.48, 0.4, 0.04, gx, 0.22, gd / 2 + 0.03, toon("#f2c4a0"), 0.02);
+      box(0.5, 0.025, 0.5, gx, 0.012, gd / 2 + 0.28, concrete, 0.01);
+      // Homer's pink sedan in the driveway
+      const pinkCar = toon("#d98ad6");
+      const cz = gd / 2 + 0.3;
+      box(0.3, 0.1, 0.5, gx, 0.1, cz, pinkCar, 0.04);
+      box(0.24, 0.09, 0.26, gx, 0.19, cz - 0.04, pinkCar, 0.04);
+      box(0.22, 0.07, 0.02, gx, 0.19, cz + 0.09, teal, 0.01);
+      for (const [wx, wz] of [[-0.13, -0.15], [0.13, -0.15], [-0.13, 0.15], [0.13, 0.15]]) {
+        const wheel = cyl(0.05, 0.05, 0.04, gx + wx, 0.05, cz + wz, ink, 12);
+        wheel.rotation.z = Math.PI / 2;
+      }
+      for (const sx of [-0.11, 0.11]) box(0.04, 0.05, 0.02, gx + sx, 0.11, cz + 0.255, toon("#f08a24"), 0.01);
+      // front walk, bushes, blue mailbox
+      box(0.14, 0.02, 0.26, hx, 0.01, fz + 0.27, concrete, 0.005);
+      box(0.72, 0.02, 0.12, hx + 0.36, 0.01, fz + 0.38, concrete, 0.005);
+      const bush = toon("#56b84a");
+      for (const [bx2, br] of [[-0.17, 0.07], [0.17, 0.07], [-0.62, 0.09]] as [number, number][]) ball(br, hx + bx2, br * 0.9, fz + 0.1, bush, 12);
+      cyl(0.012, 0.012, 0.2, gx - 0.36, 0.1, fz + 0.46, toon("#9a6b3f"), 6);
+      box(0.06, 0.06, 0.11, gx - 0.36, 0.22, fz + 0.46, toon("#2f6fd6"), 0.025);
+      topY = h + 0.62;
+      halfW = 0.85;
       break;
     }
     /* -------- Springfield Employment Office -------- */
@@ -437,40 +468,57 @@ function buildBuilding(loc: Location) {
 
     /* -------- Krusty Burger -------- */
     case "krusty": {
-      /* Krusty Burger: red walls, yellow mansard roof, the clown's head on a tall pole */
+      /* Krusty Burger, after the show: tan-orange walls under a red-orange mansard roof with
+         white ribs, big teal windows, and a tall pole sign with the clown's head on top */
+      const walls = toon("#efaa62");
+      const roofRed = toon("#e0552b");
       const red = toon("#e0352b");
-      const yellow = toon("#fed90f");
-      const w = 1.12, h = 0.66, d = 0.96;
-      body = box(w, h, d, 0.08, h / 2, 0, red);
-      box(w + 0.03, 0.12, d + 0.03, 0.08, 0.06, 0, white);
-      mansard(w + 0.2, d + 0.2, 0.3, 0.08, h - 0.02, 0, yellow, 0.84);
-      box(w - 0.04, 0.05, d - 0.04, 0.08, h + 0.29, 0, roofGrey);
-      const sgn = sign("KRUSTY BURGER", 1.0, 0.17, 0.08, h + 0.13, d / 2 + 0.07, { fg: "#e0352b", stroke: "#fffdf3" });
-      sgn.rotation.x = -0.32;
-      // big windows + glass door
-      box(0.6, 0.32, 0.04, -0.08, 0.36, d / 2 + 0.01, glass, 0.02);
-      for (const mx of [-0.28, -0.08, 0.12]) box(0.025, 0.32, 0.05, mx, 0.36, d / 2 + 0.02, white, 0.006);
-      box(0.22, 0.44, 0.04, 0.44, 0.22, d / 2 + 0.01, darkGlass, 0.02);
-      winSide(0.5, 0.28, 0.08 + w / 2, 0.36, 0, white, glass);
-      // drive-thru menu board
-      cyl(0.015, 0.015, 0.3, w / 2 + 0.24, 0.15, 0.3, metal, 6);
-      box(0.06, 0.18, 0.24, w / 2 + 0.24, 0.36, 0.3, yellow, 0.02);
-      // tall pole sign with the giant clown head
-      const px = -0.62, pz = 0.36;
-      cyl(0.04, 0.05, 1.3, px, 0.65, pz, toon("#d9d9d9"), 10);
-      const headY = 1.5;
-      ball(0.27, px, headY, pz, white, 24);
-      ball(0.07, px, headY - 0.02, pz + 0.27, red, 12);
-      for (const sx of [-1, 1]) {
-        ball(0.08, px + sx * 0.1, headY + 0.08, pz + 0.2, white, 12);
-        ball(0.032, px + sx * 0.095, headY + 0.08, pz + 0.28, toon("#3d8fe0"), 8);
-        ball(0.14, px + sx * 0.27, headY + 0.03, pz - 0.02, toon("#4fae4a"), 12);
-        ball(0.1, px + sx * 0.21, headY + 0.18, pz - 0.05, toon("#4fae4a"), 10);
+      const teal = toon("#82d8cc", { emissive: "#2f8f86", emissiveIntensity: 0.2 });
+      const w = 1.14, h = 0.6, d = 0.96, bx0 = 0.12;
+      body = box(w, h, d, bx0, h / 2, 0, walls);
+      box(w + 0.03, 0.08, d + 0.03, bx0, 0.04, 0, toon("#c9783a"));
+      const mH = 0.3, taper = 0.84;
+      mansard(w + 0.2, d + 0.2, mH, bx0, h - 0.02, 0, roofRed, taper);
+      box(w - 0.06, 0.05, d - 0.06, bx0, h + mH - 0.03, 0, roofGrey);
+      // white ribs down the front and side slopes
+      const tilt = Math.atan(((1 - taper) * (d + 0.2)) / 2 / mH);
+      for (let i = 0; i < 9; i++) {
+        const rib = box(0.025, mH + 0.02, 0.02, bx0 - 0.5 + i * 0.125, h - 0.02 + mH / 2, (d + 0.2) / 2 - ((1 - taper) * (d + 0.2)) / 4, white, 0.006);
+        rib.rotation.x = -tilt;
       }
-      const smile = mesh(new THREE.TorusGeometry(0.12, 0.03, 8, 18, Math.PI), red, px, headY - 0.1, pz + 0.21);
+      for (let i = 0; i < 7; i++) {
+        const rib = box(0.02, mH + 0.02, 0.025, bx0 + (w + 0.2) / 2 - ((1 - taper) * (w + 0.2)) / 4, h - 0.02 + mH / 2, -0.38 + i * 0.125, white, 0.006);
+        rib.rotation.z = Math.atan(((1 - taper) * (w + 0.2)) / 2 / mH);
+      }
+      // big teal windows with white frames, glass doors
+      for (const wx of [-0.3, 0.12]) {
+        box(0.36, 0.3, 0.03, bx0 + wx, 0.34, d / 2 + 0.01, white, 0.012);
+        box(0.32, 0.26, 0.035, bx0 + wx, 0.34, d / 2 + 0.02, teal, 0.01);
+        box(0.015, 0.26, 0.04, bx0 + wx, 0.34, d / 2 + 0.025, white, 0.004);
+      }
+      box(0.2, 0.42, 0.04, bx0 + 0.43, 0.21, d / 2 + 0.01, darkGlass, 0.02);
+      winSide(0.6, 0.28, bx0 + w / 2, 0.34, 0, white, teal);
+      // tall pole sign: cream board, red lettering, maroon rim, the clown's head on top
+      const px = -0.62, pz = 0.38;
+      cyl(0.035, 0.045, 1.3, px, 0.65, pz, toon("#d9d9d9"), 10);
+      const signY = 1.32;
+      box(0.66, 0.26, 0.07, px, signY, pz, toon("#7a2e22"), 0.06);
+      sign("KRUSTY BURGER", 0.6, 0.2, px, signY, pz + 0.037, { bg: "#fff3b0", fg: "#e0352b", border: null, radius: 22 });
+      const headY = signY + 0.36;
+      ball(0.24, px, headY, pz, white, 24);
+      ball(0.06, px, headY - 0.02, pz + 0.24, red, 12);
+      for (const sx of [-1, 1]) {
+        ball(0.07, px + sx * 0.09, headY + 0.07, pz + 0.18, white, 12);
+        ball(0.028, px + sx * 0.085, headY + 0.07, pz + 0.25, toon("#3d8fe0"), 8);
+        ball(0.12, px + sx * 0.24, headY + 0.02, pz - 0.02, toon("#4fae4a"), 12);
+        ball(0.085, px + sx * 0.19, headY + 0.15, pz - 0.05, toon("#4fae4a"), 10);
+      }
+      const smile = mesh(new THREE.TorusGeometry(0.105, 0.026, 8, 18, Math.PI), red, px, headY - 0.09, pz + 0.19);
       smile.rotation.set(0.35, 0, Math.PI);
-      ball(0.09, px, headY + 0.27, pz, toon("#7fd3f7"), 12).scale.set(1.2, 0.5, 1.2);
-      topY = headY + 0.38;
+      // drive-thru menu board
+      cyl(0.015, 0.015, 0.3, bx0 + w / 2 + 0.14, 0.15, 0.3, metal, 6);
+      box(0.06, 0.18, 0.24, bx0 + w / 2 + 0.14, 0.36, 0.3, toon("#fed90f"), 0.02);
+      topY = headY + 0.3;
       halfW = 0.6;
       break;
     }
@@ -817,32 +865,73 @@ function buildBuilding(loc: Location) {
   return { group: g, body, topY, halfW };
 }
 
-/** The Flanders place next door: tidy, beige, white picket fence. */
+/** The Flanders place next door, after the show: salmon two-storey under a lavender
+    side-gabled roof, a forward garage with a red door, a tall brick chimney on the right,
+    a purple front door under a striped awning, and a wooden fence. */
 function buildFlandersHouse() {
   const g = new THREE.Group();
-  const { box, hipRoof, win, cyl, ball } = kit(g);
-  const wall = toon("#e2d3a6");
-  const roof = toon("#6f8f4a");
-  const frame = toon("#fbfaf4");
-  const glass = toon("#8fd3f4", { emissive: "#3c8fc2", emissiveIntensity: 0.25 });
-  const w = 1.15, h = 0.62, d = 0.86;
-  box(w, h, d, 0, h / 2, -0.05, wall);
-  hipRoof(w + 0.16, d + 0.16, 0.36, 0, h, -0.05, roof);
-  box(0.22, 0.42, 0.04, 0, 0.21, d / 2 - 0.04, toon("#5a8f3a"), 0.02);
-  for (const wx of [-0.36, 0.36]) win(0.24, 0.2, wx, 0.34, d / 2 - 0.05, frame, glass);
-  // white picket fence
-  for (let i = 0; i < 13; i++) {
-    const x = -0.75 + i * 0.125;
-    if (Math.abs(x) < 0.14) continue;
-    box(0.04, 0.16, 0.02, x, 0.08, d / 2 + 0.24, frame, 0.01);
+  const { box, gable, cyl, ball, sign } = kit(g);
+  const wall = toon("#e08a6e");
+  const roof = toon("#b18ad9");
+  const frameG = toon("#2f7f62");
+  const teal = toon("#82d8cc", { emissive: "#2f8f86", emissiveIntensity: 0.2 });
+  const brick = toon("#c9584a");
+  const wood = toon("#c98a4a");
+  const concrete = toon("#d6d1c4");
+  const hx = -0.08;
+  const w = 1.1, h = 0.92, d = 0.78;
+  const fz = d / 2;
+  box(w, h, d, hx, h / 2, -0.06, wall, 0.03);
+  gable(d + 0.22, w + 0.12, 0.4, hx, h, -0.06, roof);
+  // tall brick chimney on the right gable end
+  box(0.16, 1.5, 0.2, hx + w / 2 + 0.02, 0.75, -0.08, brick, 0.02);
+  box(0.2, 0.06, 0.24, hx + w / 2 + 0.02, 1.52, -0.08, brick, 0.02);
+  // TV antenna
+  cyl(0.008, 0.008, 0.3, hx - 0.3, h + 0.36, -0.1, toon("#2b2723"), 6);
+  box(0.16, 0.01, 0.01, hx - 0.3, h + 0.48, -0.1, toon("#2b2723"), 0.003);
+  // windows: teal glass in dark green frames
+  const win2 = (x: number, y: number, ww: number, hh: number, z: number) => {
+    box(ww + 0.05, hh + 0.05, 0.03, x, y, z, frameG, 0.01);
+    box(ww, hh, 0.035, x, y, z + 0.012, teal, 0.008);
+    box(0.012, hh, 0.04, x, y, z + 0.016, frameG, 0.003);
+  };
+  win2(hx - 0.4, 0.72, 0.16, 0.16, fz - 0.06);
+  win2(hx - 0.12, 0.72, 0.16, 0.16, fz - 0.06);
+  win2(hx - 0.48, 0.3, 0.14, 0.2, fz - 0.06);
+  for (const zz of [-0.3, 0.1]) {
+    box(0.03, 0.2, 0.2, hx + w / 2 + 0.02, 0.72, zz, frameG, 0.01);
+    box(0.035, 0.16, 0.16, hx + w / 2 + 0.03, 0.72, zz, teal, 0.008);
   }
-  for (const y of [0.05, 0.12]) {
-    box(0.6, 0.02, 0.015, -0.47, y, d / 2 + 0.23, frame, 0.004);
-    box(0.6, 0.02, 0.015, 0.47, y, d / 2 + 0.23, frame, 0.004);
+  // purple door with teal sidelights, striped awning, round step, flower box
+  const dx = hx - 0.22;
+  box(0.3, 0.42, 0.03, dx, 0.22, fz - 0.06, frameG, 0.01);
+  box(0.15, 0.36, 0.04, dx, 0.2, fz - 0.05, toon("#8a6bc4"), 0.015);
+  for (const sx of [-0.1, 0.1]) box(0.04, 0.32, 0.04, dx + sx, 0.2, fz - 0.05, teal, 0.008);
+  for (let i = 0; i < 5; i++) {
+    const st = box(0.07, 0.03, 0.16, dx - 0.14 + i * 0.07, 0.46, fz + 0.02, toon(i % 2 ? "#ffffff" : "#e0352b"), 0.006);
+    st.rotation.x = 0.4;
   }
-  // a neat little tree
-  cyl(0.04, 0.05, 0.3, 0.7, 0.15, -0.3, toon("#7a4a2a"), 8);
-  ball(0.2, 0.7, 0.45, -0.3, toon("#52b947"), 14);
+  cyl(0.16, 0.17, 0.05, dx, 0.025, fz + 0.06, concrete, 20);
+  box(0.18, 0.06, 0.07, dx - 0.26, 0.12, fz - 0.02, toon("#c0392b"), 0.01);
+  ball(0.05, dx - 0.26, 0.17, fz - 0.02, toon("#52b947"), 10);
+  // the garage pushes forward on the right with its own little gable
+  const gx = hx + 0.27;
+  const gw = 0.5, gh = 0.5, gd = 0.42;
+  const gz = fz + gd / 2 - 0.08;
+  box(gw, gh, gd, gx, gh / 2, gz, wall, 0.02);
+  gable(gw + 0.12, gd + 0.06, 0.2, gx, gh, gz, roof, false);
+  box(0.09, 0.07, 0.03, gx, gh + 0.06, gz + gd / 2 + 0.02, frameG, 0.01);
+  box(0.07, 0.05, 0.035, gx, gh + 0.06, gz + gd / 2 + 0.025, teal, 0.008);
+  box(0.4, 0.34, 0.04, gx, 0.18, gz + gd / 2 + 0.01, toon("#c4524a"), 0.015);
+  for (let i = 1; i <= 4; i++) box(0.38, 0.01, 0.02, gx, 0.02 + i * 0.07, gz + gd / 2 + 0.035, toon("#9a3a34"), 0.003);
+  box(0.42, 0.02, 0.3, gx, 0.01, gz + gd / 2 + 0.16, concrete, 0.005);
+  // stepping stones, purple mailbox, wooden fence along the side
+  for (let i = 0; i < 3; i++) cyl(0.045, 0.045, 0.015, dx - 0.05 + i * 0.03, 0.008, fz + 0.2 + i * 0.1, concrete, 12);
+  cyl(0.012, 0.012, 0.2, dx - 0.36, 0.1, fz + 0.32, wood, 6);
+  box(0.06, 0.06, 0.1, dx - 0.36, 0.22, fz + 0.32, toon("#8a6bc4"), 0.025);
+  for (let i = 0; i < 7; i++) box(0.035, 0.22, 0.02, hx + w / 2 + 0.16, 0.11, -0.35 + i * 0.11, wood, 0.008);
+  box(0.02, 0.03, 0.7, hx + w / 2 + 0.16, 0.16, -0.02, wood, 0.006);
+  void sign;
   const label = makeLabel("Flanders", 0.8);
   label.position.set(0, h + 0.75, 0);
   g.add(label);
@@ -1113,6 +1202,8 @@ function initScene(
     const { group, body, topY, halfW } = buildBuilding(loc);
     const p = cellToWorld(loc.x, loc.y);
     group.position.set(p.x, 0, p.z);
+    // side-column buildings face the town square
+    if (loc.y > 0 && loc.y < ROWS - 1) group.rotation.y = loc.x === 0 ? Math.PI / 2 : loc.x === COLS - 1 ? -Math.PI / 2 : 0;
     scene.add(group);
     pickables.push(group);
     bodies.push({ id: loc.id, body });
@@ -1127,6 +1218,7 @@ function initScene(
   const fh = buildFlandersHouse();
   const fp = cellToWorld(RING[FLANDERS_CELL].x, RING[FLANDERS_CELL].y);
   fh.position.set(fp.x, 0, fp.z);
+  fh.rotation.y = Math.PI / 2; // face the town square
   scene.add(fh);
 
   // name labels render in a final overlay pass (above the tokens)
