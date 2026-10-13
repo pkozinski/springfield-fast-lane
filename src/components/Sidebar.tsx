@@ -30,7 +30,7 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <section className="card">
+      <section className="card" data-tut="goals">
         <h3>Life Goals</h3>
         {goals.map((g) => (
           <div className="goal" key={g.key}>
@@ -47,7 +47,7 @@ export default function Sidebar() {
         ))}
       </section>
 
-      <section className="card rival-card">
+      <section className="card rival-card" data-tut="rival">
         <h3>Keeping Up with the Flanderses</h3>
         <div className="rival-head">
           <span className="rival-face">

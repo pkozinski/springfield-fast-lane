@@ -17,6 +17,8 @@ function load(): GameState {
       const parsed = JSON.parse(raw) as GameState;
       // guard against stale saves from older versions
       if (parsed && typeof parsed.week === "number" && parsed.goals && parsed.rival) {
+        // saves from before the tutorial existed skip it
+        if (parsed.tutorialDone === undefined) parsed.tutorialDone = true;
         seedLogSeq(parsed.log ?? []);
         return parsed;
       }

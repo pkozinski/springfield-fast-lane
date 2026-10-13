@@ -7,7 +7,7 @@ export default function HUD() {
   const { state, dispatch } = useGame();
   const worth = netWorth(state);
   return (
-    <header className="hud">
+    <header className="hud" data-tut="hud">
       <div className="player">
         <span className="player-face">
           <Portrait id={state.avatar} size={48} />
@@ -50,7 +50,7 @@ export default function HUD() {
         <span className={"value " + (worth >= 0 ? "good" : "bad")}>${worth.toLocaleString()}</span>
       </div>
 
-      <button className="btn ghost end-week" onClick={() => dispatch({ type: "SLEEP" })}>
+      <button className="btn ghost end-week" data-tut="endweek" onClick={() => dispatch({ type: "SLEEP" })}>
         End Week
       </button>
     </header>

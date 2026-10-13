@@ -163,4 +163,6 @@ export interface GameState {
   lostTo: "time" | "rival" | null;
   /** seeded RNG state, so the reducer stays pure (StrictMode double-invokes it) */
   seed: number;
+  /** the post-naming tutorial has been finished or skipped */
+  tutorialDone: boolean;
 }

@@ -1559,7 +1559,7 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
         <span className="tag">{state.hours}h left</span>
       </div>
 
-      <div className="board board-3d">
+      <div className="board board-3d" data-tut="board">
         <div ref={mountRef} className="board-canvas" />
         <div className="clock-plate">
           <Clock hours={state.hours} total={state.hoursPerWeek} size={58} />

@@ -41,7 +41,8 @@ export type GameAction =
   | { type: "BORROW"; amount: number }
   | { type: "REPAY"; amount: number }
   | { type: "MOVE_HOME"; homeId: string }
-  | { type: "SLEEP" };
+  | { type: "SLEEP" }
+  | { type: "TUTORIAL_DONE" };
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -89,6 +90,7 @@ export function initialState(): GameState {
     stats: { weeksWorked: 0, totalEarned: 0 },
     rival: initialRival(),
     lostTo: null,
+    tutorialDone: false,
     seed: 1,
   };
 }
@@ -473,6 +475,11 @@ export function reducer(state: GameState, action: GameAction): GameState {
       s.homeId = home.id;
       s.happiness = clamp(s.happiness + 6);
       log(s, `Moved into the ${home.name} (rent $${home.rent}/wk).`, "good");
+      break;
+    }
+
+    case "TUTORIAL_DONE": {
+      s.tutorialDone = true;
       break;
     }
 

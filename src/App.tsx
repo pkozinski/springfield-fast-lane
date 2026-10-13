@@ -9,6 +9,7 @@ import LocationPanel from "./components/LocationPanel";
 import { PortraitDefs } from "./components/Portrait";
 import Intro from "./screens/Intro";
 import GameOver from "./screens/GameOver";
+import Tutorial from "./components/Tutorial";
 
 export default function App() {
   const { state, dispatch } = useGame();
@@ -38,6 +39,7 @@ export default function App() {
           </main>
           <Sidebar />
         </div>
+        {!state.tutorialDone && <Tutorial />}
 
         <div className="footer-note">
           Springfield Fast Lane · a fan-made homage to Jones in the Fast Lane ·{" "}
