@@ -1,5 +1,5 @@
 import type {
-  Course,
+  Degree,
   FoodItem,
   Goals,
   Home,
@@ -24,14 +24,17 @@ export const CONFIG = {
   carTravelDiscount: 0.5, // owning a car halves travel time
   /** Flanders' average weekly gain in net worth (his pace sets the difficulty) */
   rivalWeeklyIncome: 300,
-  /** chance per week that Flanders finishes another course */
-  rivalStudyChance: 0.42,
+  /** chance per week that Flanders attends 0 / 1 / 2 classes (about 1.1 a week) */
+  rivalClassOdds: [0.2, 0.5, 0.3],
+  /** classes needed to graduate, and hours per class (a laptop cuts class time 20%) */
+  classesPerDegree: 5,
+  classHours: 6,
 };
 
 export const DEFAULT_GOALS: Goals = {
   wealth: 6000,
   happiness: 80,
-  education: 8,
+  education: 4, // degrees
   career: 5,
 };
 
@@ -42,7 +45,7 @@ export const LOCATIONS: Location[] = [
   // top row (left -> right)
   { id: "home", name: "Evergreen Terrace", short: "Home", category: "home", x: 0, y: 0, accent: "#e8826b", blurb: "Plop down on the couch, check your goals, and sleep to end the week." },
   { id: "employment", name: "Springfield Employment Office", short: "Jobs", category: "employment", x: 1, y: 0, accent: "#4a8fd9", blurb: "Take a number. Browse every job in town that'll have you." },
-  { id: "university", name: "Springfield University", short: "Uni", category: "university", x: 2, y: 0, accent: "#b8503a", blurb: "Enroll in courses to earn credits and unlock better careers. Nerds welcome." },
+  { id: "university", name: "Springfield University", short: "Uni", category: "university", x: 2, y: 0, accent: "#b8503a", blurb: "Enroll in a degree, attend classes, graduate, and unlock better careers. Nerds welcome." },
   { id: "krusty", name: "Krusty Burger", short: "Krusty", category: "food", x: 3, y: 0, accent: "#e0352b", blurb: "Flip burgers for a paycheck, or grab a combo. Hey hey!" },
   { id: "trynsave", name: "Try-N-Save", short: "Try-N-Save", category: "shop", x: 4, y: 0, accent: "#2f6fd6", blurb: "Discount everything: a sharp suit, home comforts, and retail shifts." },
 
@@ -122,15 +125,15 @@ export function getLocation(id: string): Location {
 
 // Career ladder ------------------------------------------------------------
 export const JOBS: Job[] = [
-  { id: "fry-cook", title: "Krusty Burger Fry Cook", locationId: "krusty", wage: 9, tier: 1, reqCredits: 0, reqWardrobe: false, blurb: "Entry level. Don't ask what's in the sauce." },
-  { id: "stocker", title: "Stock Clerk", locationId: "trynsave", wage: 11, tier: 2, reqCredits: 0, reqWardrobe: false, blurb: "Keep the bargain bins full at Try-N-Save." },
-  { id: "safety", title: "Safety Inspector, Sector 7-G", locationId: "plant", wage: 14, tier: 2, reqCredits: 0, reqWardrobe: false, blurb: "Mostly involves napping at a console. Solid pay." },
-  { id: "donut-chef", title: "Head Donut Chef", locationId: "lardlad", wage: 15, tier: 3, reqCredits: 2, reqWardrobe: false, blurb: "Run the fryer at Lard Lad. Needs a little training." },
-  { id: "teller", title: "Bank Teller", locationId: "bank", wage: 18, tier: 3, reqCredits: 3, reqWardrobe: true, blurb: "A respectable desk job. Dress the part." },
-  { id: "store-mgr", title: "Store Manager", locationId: "trynsave", wage: 24, tier: 4, reqCredits: 5, reqWardrobe: true, blurb: "Run the floor at Try-N-Save." },
-  { id: "it", title: "Globex IT Specialist", locationId: "globex", wage: 28, tier: 4, reqCredits: 6, reqWardrobe: true, blurb: "Keep Globex's systems (and secret lairs) running." },
-  { id: "engineer", title: "Globex Engineer", locationId: "globex", wage: 40, tier: 5, reqCredits: 9, reqWardrobe: true, blurb: "The fast lane to wealth. Hammocks in the office." },
-  { id: "vp", title: "VP of World Domination", locationId: "globex", wage: 58, tier: 6, reqCredits: 13, reqWardrobe: true, blurb: "Top of the ladder. Great boss, odd hobbies." },
+  { id: "fry-cook", title: "Krusty Burger Fry Cook", locationId: "krusty", wage: 9, tier: 1, reqDegree: null, reqWardrobe: false, blurb: "Entry level. Don't ask what's in the sauce." },
+  { id: "stocker", title: "Stock Clerk", locationId: "trynsave", wage: 11, tier: 2, reqDegree: null, reqWardrobe: false, blurb: "Keep the bargain bins full at Try-N-Save." },
+  { id: "safety", title: "Safety Inspector, Sector 7-G", locationId: "plant", wage: 14, tier: 2, reqDegree: null, reqWardrobe: false, blurb: "Mostly involves napping at a console. Solid pay." },
+  { id: "donut-chef", title: "Head Donut Chef", locationId: "lardlad", wage: 15, tier: 3, reqDegree: "trade", reqWardrobe: false, blurb: "Run the fryer at Lard Lad. Needs a little training." },
+  { id: "teller", title: "Bank Teller", locationId: "bank", wage: 18, tier: 3, reqDegree: "college", reqWardrobe: true, blurb: "A respectable desk job. Dress the part." },
+  { id: "store-mgr", title: "Store Manager", locationId: "trynsave", wage: 24, tier: 4, reqDegree: "business", reqWardrobe: true, blurb: "Run the floor at Try-N-Save." },
+  { id: "it", title: "Globex IT Specialist", locationId: "globex", wage: 28, tier: 4, reqDegree: "electronics", reqWardrobe: true, blurb: "Keep Globex's systems (and secret lairs) running." },
+  { id: "engineer", title: "Globex Engineer", locationId: "globex", wage: 40, tier: 5, reqDegree: "engineering", reqWardrobe: true, blurb: "The fast lane to wealth. Hammocks in the office." },
+  { id: "vp", title: "VP of World Domination", locationId: "globex", wage: 58, tier: 6, reqDegree: "grad", reqWardrobe: true, blurb: "Top of the ladder. Great boss, odd hobbies." },
 ];
 
 export function jobsAt(locationId: string): Job[] {
@@ -138,10 +141,15 @@ export function jobsAt(locationId: string): Job[] {
 }
 
 // University ---------------------------------------------------------------
-export const COURSES: Course[] = [
-  { id: "remedial", name: "Remedial Science 101", credits: 1, baseCost: 180, hours: 6, blurb: "Core skills to get started. Mostly safe." },
-  { id: "business", name: "Business & Finance", credits: 2, baseCost: 420, hours: 10, blurb: "Open the door to management roles." },
-  { id: "nuclear", name: "Nuclear Physics", credits: 3, baseCost: 780, hours: 14, blurb: "The gateway to the high-paying Globex careers." },
+// Like Jones' Hi-Tech U: pay to enroll, attend classes over several visits, then graduate.
+// Degrees build on each other, and better jobs ask for a specific one.
+export const DEGREES: Degree[] = [
+  { id: "trade", name: "Trade School Certificate", short: "Trade School", cost: 150, prereqs: [], blurb: "Hands-on basics. Lard Lad's fryers await." },
+  { id: "college", name: "Community College", short: "Community College", cost: 200, prereqs: [], blurb: "General studies. Banks like a diploma on the wall." },
+  { id: "electronics", name: "Electronics", short: "Electronics", cost: 300, prereqs: ["trade"], blurb: "Circuits and soldering. Globex IT is hiring." },
+  { id: "business", name: "Business Administration", short: "Business Admin", cost: 350, prereqs: ["college"], blurb: "Spreadsheets and synergy, for management roles." },
+  { id: "engineering", name: "Nuclear Engineering", short: "Nuclear Eng.", cost: 450, prereqs: ["electronics"], blurb: "The gateway to Globex's engineering jobs." },
+  { id: "grad", name: "Graduate School", short: "Grad School", cost: 600, prereqs: ["business", "engineering"], blurb: "The top rung. World domination needs a master's." },
 ];
 
 // Shop catalogue -----------------------------------------------------------
@@ -151,7 +159,7 @@ export const ITEMS: ShopItem[] = [
   { id: "massage", name: "Massage Chair", locationId: "trynsave", cost: 160, happy: 6, wealth: 60, category: "comfort", blurb: "Small daily luxury." },
   { id: "tv", name: "Big-Screen TV", locationId: "globex", cost: 650, happy: 14, wealth: 300, category: "tech", blurb: "Cartoon marathons in glorious widescreen." },
   { id: "console", name: "Bonestorm Console", locationId: "globex", cost: 520, happy: 13, wealth: 240, category: "tech", blurb: "The game everyone's talking about." },
-  { id: "laptop", name: "Laptop", locationId: "globex", cost: 1200, happy: 10, wealth: 650, category: "tech", blurb: "Study faster: courses take 20% less time." },
+  { id: "laptop", name: "Laptop", locationId: "globex", cost: 1200, happy: 10, wealth: 650, category: "tech", blurb: "Study faster: classes take 20% less time." },
   { id: "phone", name: "Smartphone", locationId: "globex", cost: 900, happy: 12, wealth: 450, category: "tech", blurb: "Stay connected." },
   { id: "car", name: "The Homer", locationId: "globex", cost: 5200, happy: 22, wealth: 3800, category: "vehicle", blurb: "Bubble dome, three horns, and half the travel time." },
 ];
@@ -211,21 +219,23 @@ export function getJob(id: string): Job {
   return j;
 }
 
-export function getCourse(id: string): Course {
-  const c = COURSES.find((x) => x.id === id);
-  if (!c) throw new Error(`Unknown course ${id}`);
-  return c;
+export function getDegree(id: string): Degree {
+  const d = DEGREES.find((x) => x.id === id);
+  if (!d) throw new Error(`Unknown degree ${id}`);
+  return d;
 }
 
 // Ned Flanders -------------------------------------------------------------
-/** Ned's own career ladder, climbed as his credits grow. */
-export const RIVAL_JOBS: { tier: number; reqCredits: number; title: string }[] = [
-  { tier: 1, reqCredits: 0, title: "Leftorium Clerk" },
-  { tier: 2, reqCredits: 1, title: "Leftorium Shift Lead" },
-  { tier: 3, reqCredits: 3, title: "Leftorium Owner" },
-  { tier: 4, reqCredits: 5, title: "Leftorium Franchiser" },
-  { tier: 5, reqCredits: 7, title: "Left-Handed Tycoon" },
+/** Ned's own career ladder, climbed as his degrees pile up. */
+export const RIVAL_JOBS: { tier: number; reqDegrees: number; title: string }[] = [
+  { tier: 1, reqDegrees: 0, title: "Leftorium Clerk" },
+  { tier: 2, reqDegrees: 1, title: "Leftorium Shift Lead" },
+  { tier: 3, reqDegrees: 2, title: "Leftorium Owner" },
+  { tier: 4, reqDegrees: 3, title: "Leftorium Franchiser" },
+  { tier: 5, reqDegrees: 4, title: "Left-Handed Tycoon" },
 ];
+/** The degrees Ned works through, in order (he's a model student, so no prerequisites to juggle). */
+export const RIVAL_DEGREES = ["Sunday School Teaching", "Left-Handed Retail", "Bookkeeping", "Theology", "Pastoral Counseling", "Divinity"];
 
 export const RIVAL_QUOTES = [
   "Hi-diddly-ho, neighborino!",

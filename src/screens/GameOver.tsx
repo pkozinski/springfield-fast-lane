@@ -10,7 +10,7 @@ export default function GameOver() {
   const cells = [
     { label: "Net worth", value: `$${worth.toLocaleString()}` },
     { label: "Career level", value: `${state.careerLevel}` },
-    { label: "Education", value: `${state.credits} cr` },
+    { label: "Education", value: `${state.degrees.length} degree${state.degrees.length === 1 ? "" : "s"}` },
     { label: "Happiness", value: `${Math.round(state.happiness)}` },
     { label: "Weeks played", value: `${Math.min(state.week, state.weekLimit)}` },
     { label: "Total earned", value: `$${state.stats.totalEarned.toLocaleString()}` },

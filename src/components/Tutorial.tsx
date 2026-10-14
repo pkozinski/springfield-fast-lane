@@ -18,7 +18,7 @@ function steps(name: string): Step[] {
     },
     {
       title: "Your life goals",
-      body: `Hit all four to win: $${DEFAULT_GOALS.wealth.toLocaleString()} net worth, a level ${DEFAULT_GOALS.career} career, ${DEFAULT_GOALS.education} education credits, and ${DEFAULT_GOALS.happiness} happiness.`,
+      body: `Hit all four to win: $${DEFAULT_GOALS.wealth.toLocaleString()} net worth, a level ${DEFAULT_GOALS.career} career, ${DEFAULT_GOALS.education} degrees, and ${DEFAULT_GOALS.happiness} happiness.`,
       target: "goals",
     },
     {
@@ -38,7 +38,7 @@ function steps(name: string): Step[] {
     },
     {
       title: "Your first moves",
-      body: "Get a job at the Employment Office (Krusty Burger hires anyone). Eat to keep your energy up. Take courses at Springfield U to unlock better jobs, and bank your savings to earn interest.",
+      body: "Get a job at the Employment Office (Krusty Burger hires anyone). Eat to keep your energy up. Enroll at Springfield U and attend classes to earn degrees that unlock better jobs, and bank your savings to earn interest.",
     },
     {
       title: "End the week",

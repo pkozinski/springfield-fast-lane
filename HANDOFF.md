@@ -51,18 +51,23 @@ src/
 ```
 
 ## Game model (quick map)
-- **Goals:** Wealth (net worth), Career (job tier), Education (credits), Happiness. Win = all four
+- **Goals:** Wealth (net worth), Career (job tier), Education (degrees), Happiness. Win = all four
   met. Lose = Flanders meets all four first (`lostTo: "rival"`) or weeks run out (`"time"`).
 - **Locations (ids):** home (Evergreen Terrace), employment, university, krusty, trynsave, globex,
   aztec, moes, bowlarama, kwikemart, lardlad, plant (Nuclear Power Plant, a pure workplace), bank.
+- **Education (Jones-style):** `DEGREES` in `data.ts` form a prerequisite tree. ENROLL pays the
+  fee once; ATTEND spends `classHours(s)` (6h, 5h with a laptop) per class; after
+  `CONFIG.classesPerDegree` (5) classes you graduate. State: `degrees` (earned ids) + `enrolled`
+  (id -> classes attended). Jobs need a specific degree via `reqDegree`. Old credit-based saves are
+  migrated in `store.tsx` (degree track restarts).
 - **Movement:** perimeter ring. `RING` in `data.ts` is the clockwise cell order (13 locations + the
   Flanders house pass-through cell, `FLANDERS_CELL`). `ringPath`/`ringDistance` drive movement and
   travel cost.
 - **Flanders:** `state.rival` {cell, worth, credits, careerLevel, happiness, jobTitle, quote}. Each
-  week `rivalWeek()` adds randomized income (`CONFIG.rivalWeeklyIncome`), maybe a course
-  (`CONFIG.rivalStudyChance`), promotions via `RIVAL_JOBS`, cheer, and logs a quote (`kind: "rival"`).
-  On player MOVE he may wander to a random ring cell. Simulated pace: median finish week 22
-  (p10 20, p90 26), so he beats the 24-week limit ~80% of runs. Tune with the two CONFIG knobs.
+  week `rivalWeek()` adds randomized income (`CONFIG.rivalWeeklyIncome`), 0-2 classes
+  (`CONFIG.rivalClassOdds`, graduating every 5 into `RIVAL_DEGREES`), promotions via `RIVAL_JOBS` (by degree count), cheer, and logs a quote (`kind: "rival"`).
+  On player MOVE he may wander to a random ring cell. Simulated pace: median finish week 23
+  (p10 20, p90 25), so he beats the 24-week limit ~82% of runs. Tune with the two CONFIG knobs.
 - **Reducer purity:** never use `Math.random` in the engine; use `rand(s)`. START takes a `seed`.
 
 ## The 3D board — `components/CityMap.tsx` (READ THIS BEFORE EDITING BUILDINGS)
@@ -111,7 +116,9 @@ Edge using the **hardware GPU** (`--use-angle=d3d11`; SwiftShader renders wrong)
 
 ## Status
 Done: full Springfield conversion (content, cartoon UI, toon 3D board with all 13 landmarks +
-Flanders house, character tokens, Flanders AI rival with race card and loss condition).
+Flanders house, character tokens, Flanders AI rival with race card and loss condition), skippable
+tutorial, walkway loop, Jones-style degrees. Rendering: shadow map only redraws while a building
+hover-bobs (`shadowMap.autoUpdate = false`), and the board's loop pauses while a location card is open.
 
 ## Backlog / ideas (not started)
 - **Juice:** coin-burst on earning, SFX (hop, cha-ching, "D'oh!"-style stings), confetti win screen.

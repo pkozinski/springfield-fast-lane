@@ -7,7 +7,8 @@ import {
   RING,
   RIVAL_JOBS,
   RIVAL_QUOTES,
-  getCourse,
+  getDegree,
+  RIVAL_DEGREES,
   getHome,
   getItem,
   getJob,
@@ -32,7 +33,8 @@ export type GameAction =
   | { type: "MOVE"; to: LocationId }
   | { type: "WORK"; hours: number }
   | { type: "APPLY"; jobId: string }
-  | { type: "STUDY"; courseId: string }
+  | { type: "ENROLL"; degreeId: string }
+  | { type: "ATTEND"; degreeId: string }
   | { type: "BUY_ITEM"; itemId: string }
   | { type: "EAT"; foodId: string }
   | { type: "LEISURE"; activityId: string }
@@ -76,7 +78,8 @@ export function initialState(): GameState {
     debt: 0,
     happiness: 55,
     energy: 80,
-    credits: 0,
+    degrees: [],
+    enrolled: {},
     jobId: null,
     careerLevel: 0,
     homeId: "room",
@@ -99,7 +102,8 @@ function initialRival(): Rival {
   return {
     cell: FLANDERS_CELL,
     worth: 400,
-    credits: 0,
+    degrees: 0,
+    sessions: 0,
     careerLevel: 1,
     happiness: 60,
     jobTitle: RIVAL_JOBS[0].title,
@@ -116,7 +120,7 @@ export function goalProgress(s: GameState): Record<keyof Goals, number> {
   return {
     wealth: clamp((netWorth(s) / s.goals.wealth) * 100),
     happiness: clamp((s.happiness / s.goals.happiness) * 100),
-    education: clamp((s.credits / s.goals.education) * 100),
+    education: clamp((s.degrees.length / s.goals.education) * 100),
     career: clamp((s.careerLevel / s.goals.career) * 100),
   };
 }
@@ -125,7 +129,7 @@ export function goalsMet(s: GameState): boolean {
   return (
     netWorth(s) >= s.goals.wealth &&
     s.happiness >= s.goals.happiness &&
-    s.credits >= s.goals.education &&
+    s.degrees.length >= s.goals.education &&
     s.careerLevel >= s.goals.career
   );
 }
@@ -135,7 +139,7 @@ export function rivalProgress(s: GameState): Record<keyof Goals, number> {
   return {
     wealth: clamp((r.worth / s.goals.wealth) * 100),
     happiness: clamp((r.happiness / s.goals.happiness) * 100),
-    education: clamp((r.credits / s.goals.education) * 100),
+    education: clamp((r.degrees / s.goals.education) * 100),
     career: clamp((r.careerLevel / s.goals.career) * 100),
   };
 }
@@ -145,7 +149,7 @@ function rivalGoalsMet(s: GameState): boolean {
   return (
     r.worth >= s.goals.wealth &&
     r.happiness >= s.goals.happiness &&
-    r.credits >= s.goals.education &&
+    r.degrees >= s.goals.education &&
     r.careerLevel >= s.goals.career
   );
 }
@@ -164,12 +168,19 @@ function rivalWeek(s: GameState) {
   }
   r.worth += gain;
 
-  if (rand(s) < CONFIG.rivalStudyChance) {
-    r.credits += 1;
-    notes.push(`finished a Bible-studies course (${r.credits} credits)`);
+  // Ned goes to class like everyone else: a class or two most weeks
+  const [none, one] = CONFIG.rivalClassOdds;
+  const roll = rand(s);
+  r.sessions += roll < none ? 0 : roll < none + one ? 1 : 2;
+  if (r.sessions >= CONFIG.classesPerDegree) {
+    r.sessions -= CONFIG.classesPerDegree;
+    const name = RIVAL_DEGREES[Math.min(r.degrees, RIVAL_DEGREES.length - 1)];
+    r.degrees += 1;
+    notes.push(`graduated in ${name} (${r.degrees} degree${r.degrees === 1 ? "" : "s"})`);
+    quote = "Another diploma for the fridge, diddly-doo!";
   }
 
-  const job = [...RIVAL_JOBS].reverse().find((j) => r.credits >= j.reqCredits)!;
+  const job = [...RIVAL_JOBS].reverse().find((j) => r.degrees >= j.reqDegrees)!;
   if (job.tier > r.careerLevel) {
     r.careerLevel = job.tier;
     r.jobTitle = job.title;
@@ -183,6 +194,11 @@ function rivalWeek(s: GameState) {
 
   const did = notes.length ? `Ned ${notes.join(" and ")}. ` : "";
   log(s, `${did}"${quote}"`, "rival");
+}
+
+/** Hours one class takes (a laptop speeds up studying). */
+export function classHours(s: GameState): number {
+  return Math.ceil(CONFIG.classHours * (s.ownedItems.includes("laptop") ? 0.8 : 1));
 }
 
 export function travelCost(s: GameState, to: LocationId): number {
@@ -330,8 +346,8 @@ export function reducer(state: GameState, action: GameAction): GameState {
 
     case "APPLY": {
       const job = getJob(action.jobId);
-      if (s.credits < job.reqCredits) {
-        log(s, `${job.title} needs ${job.reqCredits} credits. You have ${s.credits}.`, "bad");
+      if (job.reqDegree && !s.degrees.includes(job.reqDegree)) {
+        log(s, `${job.title} needs a ${getDegree(job.reqDegree).name} degree.`, "bad");
         break;
       }
       if (job.reqWardrobe && !s.hasWardrobe) {
@@ -349,24 +365,51 @@ export function reducer(state: GameState, action: GameAction): GameState {
       break;
     }
 
-    case "STUDY": {
-      const course = getCourse(action.courseId);
-      const cost = course.baseCost + s.credits * 40;
-      const discount = s.ownedItems.includes("laptop") ? 0.8 : 1;
-      const hours = Math.ceil(course.hours * discount);
-      if (s.cash < cost) {
-        log(s, `Need $${cost} for ${course.name}. You have $${s.cash}.`, "bad");
+    case "ENROLL": {
+      const deg = getDegree(action.degreeId);
+      if (s.degrees.includes(deg.id) || deg.id in s.enrolled) {
+        log(s, `You're already ${s.degrees.includes(deg.id) ? "a graduate of" : "enrolled in"} ${deg.name}.`, "info");
         break;
       }
+      const missing = deg.prereqs.filter((id) => !s.degrees.includes(id));
+      if (missing.length) {
+        log(s, `${deg.name} needs ${missing.map((id) => getDegree(id).name).join(" and ")} first.`, "bad");
+        break;
+      }
+      if (s.cash < deg.cost) {
+        log(s, `Enrolling in ${deg.name} costs $${deg.cost}. You have $${s.cash}.`, "bad");
+        break;
+      }
+      s.cash -= deg.cost;
+      s.enrolled = { ...s.enrolled, [deg.id]: 0 };
+      log(s, `Enrolled in ${deg.name} for $${deg.cost}. Attend ${CONFIG.classesPerDegree} classes to graduate.`, "money");
+      break;
+    }
+
+    case "ATTEND": {
+      const deg = getDegree(action.degreeId);
+      if (!(deg.id in s.enrolled)) {
+        log(s, `Enroll in ${deg.name} before attending class.`, "bad");
+        break;
+      }
+      const hours = classHours(s);
       if (hours > s.hours) {
-        log(s, `${course.name} takes ${hours}h — not enough time left this week.`, "bad");
+        log(s, `Class takes ${hours}h — not enough time left this week.`, "bad");
         break;
       }
-      s.cash -= cost;
       s.hours = round1(s.hours - hours);
       s.energy = clamp(s.energy - hours * 2);
-      s.credits += course.credits;
-      log(s, `Completed ${course.name}: +${course.credits} credits (now ${s.credits}). Paid $${cost}.`, "good");
+      const done = s.enrolled[deg.id] + 1;
+      if (done >= CONFIG.classesPerDegree) {
+        const { [deg.id]: _, ...rest } = s.enrolled;
+        s.enrolled = rest;
+        s.degrees = [...s.degrees, deg.id];
+        s.happiness = clamp(s.happiness + 5);
+        log(s, `Graduated! You earned your ${deg.name} degree (${s.degrees.length} total).`, "good");
+      } else {
+        s.enrolled = { ...s.enrolled, [deg.id]: done };
+        log(s, `Attended ${deg.name} class ${done} of ${CONFIG.classesPerDegree}.`, "info");
+      }
       break;
     }
 

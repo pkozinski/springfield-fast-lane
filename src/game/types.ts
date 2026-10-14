@@ -43,17 +43,18 @@ export interface Job {
   locationId: LocationId;
   wage: number; // $ per hour
   tier: number; // career ladder level 1..6
-  reqCredits: number;
+  reqDegree: string | null; // degree id needed to get hired
   reqWardrobe: boolean;
   blurb: string;
 }
 
-export interface Course {
+/** A Springfield U degree: enroll once, then attend classes until you graduate. */
+export interface Degree {
   id: string;
   name: string;
-  credits: number;
-  baseCost: number;
-  hours: number;
+  short: string; // tag label, e.g. on job requirements
+  cost: number; // enrollment fee, paid once
+  prereqs: string[]; // degree ids you must hold before enrolling
   blurb: string;
 }
 
@@ -121,7 +122,8 @@ export interface Rival {
   /** index into RING where his token stands (his house is the pass-through cell) */
   cell: number;
   worth: number;
-  credits: number;
+  degrees: number; // degrees earned
+  sessions: number; // classes attended toward the next one
   careerLevel: number;
   happiness: number;
   jobTitle: string;
@@ -142,7 +144,8 @@ export interface GameState {
   happiness: number; // 0..100
   energy: number; // 0..100
 
-  credits: number; // education
+  degrees: string[]; // degree ids earned (education)
+  enrolled: Record<string, number>; // degree id -> classes attended so far
   jobId: string | null;
   careerLevel: number; // highest tier ever held
 

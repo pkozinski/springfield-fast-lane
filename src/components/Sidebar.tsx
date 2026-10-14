@@ -24,7 +24,7 @@ export default function Sidebar() {
   const goals: { key: keyof typeof gp; icon: IconName; name: string; now: string; target: string }[] = [
     { key: "wealth", icon: "wealth", name: "Wealth", now: `$${worth.toLocaleString()}`, target: `$${state.goals.wealth.toLocaleString()}` },
     { key: "career", icon: "career", name: "Career", now: `Lvl ${state.careerLevel}`, target: `Lvl ${state.goals.career}` },
-    { key: "education", icon: "book", name: "Education", now: `${state.credits} cr`, target: `${state.goals.education} cr` },
+    { key: "education", icon: "book", name: "Education", now: `${state.degrees.length}`, target: `${state.goals.education} degrees` },
     { key: "happiness", icon: "sun", name: "Happiness", now: `${Math.round(state.happiness)}`, target: `${state.goals.happiness}` },
   ];
 

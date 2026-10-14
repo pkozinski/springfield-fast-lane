@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useGame } from "../game/store";
+import { classHours } from "../game/engine";
 import {
-  COURSES,
+  CONFIG,
+  DEGREES,
   HOMES,
   JOBS,
   foodsAt,
+  getDegree,
   getHome,
   getJob,
   itemsAt,
@@ -84,7 +87,7 @@ function Employment() {
       {[...JOBS]
         .sort((a, b) => a.tier - b.tier)
         .map((job) => {
-          const eduOk = state.credits >= job.reqCredits;
+          const eduOk = !job.reqDegree || state.degrees.includes(job.reqDegree);
           const wardrobeOk = !job.reqWardrobe || state.hasWardrobe;
           const qualified = eduOk && wardrobeOk;
           const current = state.jobId === job.id;
@@ -96,8 +99,8 @@ function Employment() {
               sub={`$${job.wage}/hr · Tier ${job.tier} · ${job.blurb}`}
               tags={
                 <>
-                  {job.reqCredits > 0 && (
-                    <span className={"tag " + (eduOk ? "ok" : "")}>{job.reqCredits} cr</span>
+                  {job.reqDegree && (
+                    <span className={"tag " + (eduOk ? "ok" : "")}>{getDegree(job.reqDegree).short}</span>
                   )}
                   {job.reqWardrobe && (
                     <span className={"tag " + (wardrobeOk ? "ok" : "")}>wardrobe</span>
@@ -121,26 +124,64 @@ function Employment() {
 
 function University() {
   const { state, dispatch } = useGame();
+  const hours = classHours(state);
+  const total = CONFIG.classesPerDegree;
   return (
     <div className="action-list">
-      <p className="list-note">You have {state.credits} credits. Courses cost more as you advance.</p>
-      {COURSES.map((c) => {
-        const cost = c.baseCost + state.credits * 40;
-        const hours = state.ownedItems.includes("laptop") ? Math.ceil(c.hours * 0.8) : c.hours;
-        return (
-          <Row
-            key={c.id}
-            icon={<Icon name="book" />}
-            title={c.name}
-            sub={`+${c.credits} credits · ${hours}h · ${c.blurb}`}
-          >
+      <p className="list-note">
+        {state.degrees.length} of {state.goals.education} degrees earned. Enroll once, then attend {total} classes
+        ({hours}h each) to graduate.
+      </p>
+      {DEGREES.map((d) => {
+        const graduated = state.degrees.includes(d.id);
+        const attended = state.enrolled[d.id];
+        const enrolled = attended !== undefined;
+        const missing = d.prereqs.filter((id) => !state.degrees.includes(id));
+        let sub: string;
+        let action: React.ReactNode;
+        if (graduated) {
+          sub = `Graduated · ${d.blurb}`;
+          action = <button className="btn" disabled>Done</button>;
+        } else if (enrolled) {
+          sub = `Class ${attended} of ${total} attended · ${d.blurb}`;
+          action = (
             <button
               className="btn"
-              disabled={state.cash < cost || hours > state.hours}
-              onClick={() => dispatch({ type: "STUDY", courseId: c.id })}
+              disabled={hours > state.hours}
+              onClick={() => dispatch({ type: "ATTEND", degreeId: d.id })}
             >
-              ${cost}
+              Attend {hours}h
             </button>
+          );
+        } else {
+          sub = `${total} classes × ${hours}h · ${d.blurb}`;
+          action = (
+            <button
+              className="btn"
+              disabled={missing.length > 0 || state.cash < d.cost}
+              onClick={() => dispatch({ type: "ENROLL", degreeId: d.id })}
+            >
+              {missing.length ? "Locked" : `Enroll $${d.cost}`}
+            </button>
+          );
+        }
+        return (
+          <Row
+            key={d.id}
+            icon={<Icon name="book" />}
+            title={d.name}
+            sub={sub}
+            tags={
+              <>
+                {graduated && <span className="tag ok">degree</span>}
+                {enrolled && <span className="tag ok">{attended}/{total}</span>}
+                {!graduated && !enrolled && missing.map((id) => (
+                  <span key={id} className="tag">needs {getDegree(id).short}</span>
+                ))}
+              </>
+            }
+          >
+            {action}
           </Row>
         );
       })}

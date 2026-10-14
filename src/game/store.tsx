@@ -7,6 +7,7 @@ import {
 } from "react";
 import { initialState, reducer, seedLogSeq, type GameAction } from "./engine";
 import type { GameState } from "./types";
+import { DEFAULT_GOALS } from "./data";
 
 const KEY = "springfield.save.v1";
 
@@ -19,6 +20,17 @@ function load(): GameState {
       if (parsed && typeof parsed.week === "number" && parsed.goals && parsed.rival) {
         // saves from before the tutorial existed skip it
         if (parsed.tutorialDone === undefined) parsed.tutorialDone = true;
+        // saves from the old credits system start the degree track fresh
+        if (!Array.isArray(parsed.degrees)) {
+          const old = parsed as GameState & { credits?: number; rival: { credits?: number } };
+          delete old.credits;
+          delete old.rival.credits;
+          parsed.degrees = [];
+          parsed.enrolled = {};
+          parsed.rival.degrees = 0;
+          parsed.rival.sessions = 0;
+          parsed.goals.education = DEFAULT_GOALS.education;
+        }
         seedLogSeq(parsed.log ?? []);
         return parsed;
       }

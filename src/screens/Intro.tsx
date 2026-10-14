@@ -68,7 +68,7 @@ export default function Intro() {
             <b>Level {DEFAULT_GOALS.career}</b> career
           </span>
           <span className="chip">
-            <b>{DEFAULT_GOALS.education}</b> credits
+            <b>{DEFAULT_GOALS.education}</b> degrees
           </span>
           <span className="chip">
             <b>{DEFAULT_GOALS.happiness}</b> happiness
