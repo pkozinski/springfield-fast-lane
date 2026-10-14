@@ -28,7 +28,7 @@ export default function App() {
         <HUD />
         <div className="grid">
           <main className="board-stage">
-            <CityMap onEnter={openLocation} />
+            <CityMap onEnter={openLocation} paused={open} />
             {open && (
               <div className="loc-overlay" onClick={() => setOpen(false)}>
                 <div className="loc-modal" onClick={(e) => e.stopPropagation()}>

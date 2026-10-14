@@ -592,6 +592,7 @@ function buildBuilding(loc: Location) {
       const ring2 = mesh(new THREE.TorusGeometry(0.4, 0.02, 8, 40), gold, 0, gY, -0.08);
       ring2.rotation.y = 0.5;
       ring2.userData.spin = true;
+      ring2.castShadow = false; // spins, and the shadow map is frozen
       topY = gY + 0.38;
       halfW = 0.62;
       break;
@@ -795,6 +796,7 @@ function buildBuilding(loc: Location) {
         for (let i = 0; i < 3; i++) {
           const puff = ball(0.17 + i * 0.05, tx + 0.04 * i, 1.42 + i * 0.17, tz, steam, 14);
           puff.userData.puff = i;
+          puff.castShadow = false;
         }
       }
       // reactor building with dome
@@ -1066,6 +1068,8 @@ function makeFigure(look: FigureLook, ringColor: string) {
 interface Api {
   dispose: () => void;
   sync: (s: GameState) => void;
+  /** Stop rendering while the board is covered (e.g. a location card is open). */
+  setPaused: (paused: boolean) => void;
 }
 
 function initScene(
@@ -1079,6 +1083,9 @@ function initScene(
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // the city is static, so only redraw the shadow map when a caster moves (hover bob)
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   mount.appendChild(renderer.domElement);
   renderer.domElement.style.width = "100%";
@@ -1422,11 +1429,14 @@ function initScene(
     });
     clouds.forEach((c) => (c.position.x += Math.sin(time * 0.15 + c.userData.drift * 2) * dt * 0.08));
 
-    // hover bob
+    // hover bob (buildings cast shadows, so refresh the shadow map while one moves)
     bodies.forEach((b) => {
       const g = b.body.parent!;
       const want = b.id === hoverId && !walkState.active ? 0.12 : 0;
-      g.position.y += (want - g.position.y) * Math.min(1, dt * 12);
+      const d = want - g.position.y;
+      if (Math.abs(d) < 1e-4) return;
+      g.position.y = Math.abs(d) < 2e-3 ? want : g.position.y + d * Math.min(1, dt * 12);
+      renderer.shadowMap.needsUpdate = true;
     });
 
     if (walkState.active) {
@@ -1484,12 +1494,22 @@ function initScene(
     renderer.autoClear = false;
     renderer.render(labelScene, camera);
     renderer.autoClear = true;
-    raf = requestAnimationFrame(tick);
+    raf = paused ? 0 : requestAnimationFrame(tick);
   };
+  let paused = false;
   tick();
 
   return {
+    setPaused(p: boolean) {
+      if (p === paused) return;
+      paused = p;
+      if (!paused && !raf) {
+        clock.getDelta(); // don't jump animations by the paused time
+        raf = requestAnimationFrame(tick);
+      }
+    },
     dispose() {
+      paused = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
       renderer.domElement.removeEventListener("pointermove", onMove);
@@ -1511,7 +1531,7 @@ function initScene(
   };
 }
 
-export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void }) {
+export default function CityMap({ onEnter, paused = false }: { onEnter: (id: LocationId) => void; paused?: boolean }) {
   const { state, dispatch } = useGame();
   const mountRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
@@ -1519,6 +1539,8 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
   const onEnterRef = useRef(onEnter);
   stateRef.current = state;
   onEnterRef.current = onEnter;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     let cancelled = false;
@@ -1534,6 +1556,7 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
         onEnter: () => onEnterRef.current,
         getState: () => stateRef.current,
       });
+      apiRef.current.setPaused(pausedRef.current);
     };
     fontReady.then(start, start);
     return () => {
@@ -1548,6 +1571,10 @@ export default function CityMap({ onEnter }: { onEnter: (id: LocationId) => void
   useEffect(() => {
     apiRef.current?.sync(state);
   }, [state.location, state.jobId, state.rival.cell]);
+
+  useEffect(() => {
+    apiRef.current?.setPaused(paused);
+  }, [paused]);
 
   return (
     <div className="card stage board-card">
