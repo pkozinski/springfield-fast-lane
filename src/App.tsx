@@ -4,7 +4,7 @@ import { getLocation } from "./game/data";
 import type { LocationId } from "./game/types";
 import HUD from "./components/HUD";
 import Sidebar from "./components/Sidebar";
-import CityMap from "./components/CityMap";
+import Board from "./components/Board";
 import LocationPanel from "./components/LocationPanel";
 import { PortraitDefs } from "./components/Portrait";
 import Intro from "./screens/Intro";
@@ -28,7 +28,7 @@ export default function App() {
         <HUD />
         <div className="grid">
           <main className="board-stage">
-            <CityMap onEnter={openLocation} paused={open} />
+            <Board onEnter={openLocation} paused={open} />
             {open && (
               <div className="loc-overlay" onClick={() => setOpen(false)}>
                 <div className="loc-modal" onClick={(e) => e.stopPropagation()}>

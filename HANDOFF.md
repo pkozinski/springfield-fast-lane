@@ -41,7 +41,10 @@ src/
                            seeded RNG `rand(s)` (mulberry32 over state.seed); endWeek -> rivalWeek
     store.tsx              React context + reducer + localStorage autosave (key springfield.save.v1)
   components/
-    CityMap.tsx            *** the Three.js 3D board *** (biggest/most important file)
+    Board.tsx              board card: header, 2D/3D switch (saved in localStorage springfield.boardStyle)
+    FlatBoard.tsx          *** default board ***: flat Jones-style grid of storefront tiles + walking tokens
+    Facades.tsx            front-facing SVG storefront art per location + the town square
+    CityMap.tsx            the Three.js 3D board (optional; lazy-loaded so Three.js only loads on demand)
     LocationPanel.tsx      the location card (opens over the board)
     HUD.tsx, Sidebar.tsx   top bar; Life Goals, Flanders race card, Condition, Activity Log
     Clock.tsx              cartoon week-clock SVG
@@ -70,7 +73,18 @@ src/
   (p10 20, p90 25), so he beats the 24-week limit ~82% of runs. Tune with the two CONFIG knobs.
 - **Reducer purity:** never use `Math.random` in the engine; use `rand(s)`. START takes a `seed`.
 
-## The 3D board — `components/CityMap.tsx` (READ THIS BEFORE EDITING BUILDINGS)
+## The flat board — `components/FlatBoard.tsx` (the default)
+- CSS grid 5 x 4 (`.flat-grid`), tiles placed by each location's `x/y`; the Flanders house is a
+  static tile; the town square spans the middle with the week clock in it. Styles: `.board-flat`,
+  `.tile`, `.flat-square`, `.flat-token` in `index.css`.
+- Art: `Facade({id})` in `Facades.tsx`, one function per location, drawn in a 160x120 viewBox on
+  ground line y=116. Edit a building there.
+- Tokens: `spot(cell)` puts a token on the walkway just inside the ring (like `tokenWorld` in 3D).
+  Clicking a tile steps the token through `ringPath` every 230 ms, then dispatches MOVE and opens the card.
+- Why flat: on a square ring, every 3D camera angle left the side/corner buildings foreshortened
+  (corner 3/4 and straight-on variants were both tried and rejected by the user).
+
+## The 3D board — `components/CityMap.tsx` (optional, behind the 3D switch)
 - **Look:** `MeshToonMaterial` everywhere via `toon(color)` (3-band gradient map) + `glow(color)` for
   self-lit bits, rendered through `OutlineEffect` for ink outlines. `noOutline(mat)` opts a material
   out (signs, clouds). No env map / PBR anymore.

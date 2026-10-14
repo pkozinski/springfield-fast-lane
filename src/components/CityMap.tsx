@@ -6,7 +6,6 @@ import { FLANDERS_CELL, LOCATIONS, RING, ringIndex, ringPath, getJob } from "../
 import { travelCost } from "../game/engine";
 import { useGame } from "../game/store";
 import type { GameState, Location, LocationId } from "../game/types";
-import Clock from "./Clock";
 import { avatarShirt } from "./Portrait";
 
 /* ----------------------------------------------------------------------------
@@ -1680,28 +1679,5 @@ export default function CityMap({ onEnter, paused = false }: { onEnter: (id: Loc
     apiRef.current?.setPaused(paused);
   }, [paused]);
 
-  return (
-    <div className="card stage board-card">
-      <div className="map-head">
-        <div>
-          <h2>Springfield</h2>
-          <p>Pick a spot. You walk the board, then head inside.</p>
-        </div>
-        <span className="tag">{state.hours}h left</span>
-      </div>
-
-      <div className="board board-3d" data-tut="board">
-        <div ref={mountRef} className="board-canvas" />
-        <div className="clock-plate">
-          <Clock hours={state.hours} total={state.hoursPerWeek} size={58} />
-          <div className="clock-meta">
-            <span className="wp-week">Week {state.week}</span>
-            <span className="wp-hours">
-              {state.hours}h of {state.hoursPerWeek}h left
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <div ref={mountRef} className="board-canvas" />;
 }

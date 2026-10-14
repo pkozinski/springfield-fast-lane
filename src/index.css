@@ -309,6 +309,196 @@ h4 {
   color: var(--muted);
 }
 
+/* ---- 2D / 3D switch ------------------------------------------------------- */
+.map-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.seg {
+  display: flex;
+  border: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: var(--pop-sm);
+}
+.seg button {
+  font-family: var(--title);
+  font-size: 14px;
+  padding: 4px 12px;
+  border: 0;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: var(--line);
+}
+.seg button.on {
+  background: var(--yellow);
+}
+
+/* ---- flat (Jones-style) board ------------------------------------------- */
+.board-flat {
+  aspect-ratio: 16 / 11;
+  background: #79c64e;
+  padding: 8px;
+}
+.flat-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 6px;
+  height: 100%;
+}
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 4px 0;
+  border: var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #bfe6fb 0 62%, #e3ded2 62%);
+  box-shadow: var(--pop-sm);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.tile:disabled {
+  cursor: default;
+}
+.tile.hot {
+  transform: translateY(-3px);
+  box-shadow: 4px 6px 0 var(--ink);
+}
+.tile.here {
+  outline: 3px solid var(--yellow);
+  outline-offset: 1px;
+}
+.tile-static {
+  cursor: default;
+  opacity: 0.92;
+}
+.facade {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: visible;
+}
+.tile-name {
+  align-self: center;
+  margin: 2px 0 5px;
+  padding: 1px 9px;
+  font-family: var(--title);
+  font-size: clamp(10px, 1.15vw, 14px);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  border-bottom: 4px solid var(--accent, var(--ink));
+}
+.tile-job {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+}
+.tile-cost {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+}
+.flat-square {
+  position: relative;
+  overflow: hidden;
+  border: var(--line);
+  border-radius: 14px;
+  /* the walkway the tokens follow */
+  box-shadow: 0 0 0 6px #efe6cf, 0 0 0 8.5px var(--ink);
+  margin: 10px;
+}
+.square-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.square-clock {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 6px 8px;
+  background: var(--paper);
+  border: var(--line);
+  border-radius: 16px;
+  box-shadow: var(--pop-sm);
+}
+.square-clock .wp-week {
+  font-family: var(--title);
+  font-size: 19px;
+}
+.square-clock .wp-hours {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.flat-token {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: left 0.22s linear, top 0.22s linear;
+}
+.flat-token > div,
+.flat-token > svg {
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
+}
+.flat-token.me > div {
+  border-color: var(--ink);
+  outline: 3px solid var(--yellow);
+}
+.flat-token.ned {
+  transition-duration: 0.5s;
+}
+.flat-token.ned > svg {
+  outline: 3px solid #7fcf6d;
+}
+.flat-token.walking .hop {
+  animation: hop 0.23s ease-out;
+}
+@keyframes hop {
+  50% {
+    transform: translateY(-12px) rotate(-6deg);
+  }
+}
+
 /* ---- location card over the board ---------------------------------------- */
 .loc-overlay {
   position: absolute;
