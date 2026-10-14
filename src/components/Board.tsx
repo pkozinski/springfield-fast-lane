@@ -12,9 +12,9 @@ const KEY = "springfield.boardStyle";
 
 function savedStyle(): Style {
   try {
-    return localStorage.getItem(KEY) === "3d" ? "3d" : "flat";
+    return localStorage.getItem(KEY) === "flat" ? "flat" : "3d";
   } catch {
-    return "flat";
+    return "3d";
   }
 }
 

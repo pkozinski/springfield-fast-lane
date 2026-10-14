@@ -172,18 +172,36 @@ function TryNSave() {
   );
 }
 
-function Globex() {
+function Mall() {
+  // Springfield Mall: flared pink block, red lettering, rooftop AC units, peach entrance wing
+  const cone = (x: number, h: number) => (
+    <path d={`M${x} ${GROUND - h} L${x + 9} ${GROUND} H${x - 9} Z`} fill="#5cc85a" {...thin} />
+  );
   return (
     <g>
-      <rect x={40} y={28} width={80} height={88} fill="#20b3a8" {...ink} />
-      <rect x={52} y={14} width={56} height={16} fill="#20b3a8" {...ink} />
-      {[38, 56, 74].map((y) => [50, 72, 94].map((x) => <rect key={`${x}${y}`} x={x} y={y} width={16} height={12} fill="#c7f1ee" {...thin} />))}
-      <rect x={18} y={84} width={124} height={32} fill="#17958c" {...ink} />
-      <Door x={70} w={20} h={24} fill="#c7f1ee" />
-      <circle cx={34} cy={70} r={14} fill="#2f6fd6" {...ink} />
-      <path d="M22 66 q12 6 24 0 M26 76 q8 4 16 0" stroke="#5fb85f" strokeWidth={3} fill="none" />
-      <ellipse cx={34} cy={70} rx={20} ry={6} fill="none" stroke="#f2c14e" strokeWidth={3} transform="rotate(-20 34 70)" />
-      <Sign x={96} y={92} w={40} h={13} text="GLOBEX" bg="#fbfaf4" fg="#17958c" size={8.5} />
+      <rect x={6} y={58} width={44} height={58} fill="#8a5a4a" {...ink} />
+      <rect x={14} y={92} width={12} height={24} fill="#b9b4ad" {...thin} />
+      <path d="M62 74 L50 26 H156 L144 74 Z" fill="#f27bb5" {...ink} />
+      <rect x={66} y={74} width={74} height={42} fill="#e45f9f" {...ink} />
+      <rect x={90} y={84} width={30} height={32} fill="#9fdcf7" stroke="#c2185b" strokeWidth={2.5} />
+      <path d="M105 84 v32" stroke="#c2185b" strokeWidth={2} />
+      {[[70, 14, 24], [104, 10, 28]].map(([x, y, w]) => (
+        <g key={x}>
+          <rect x={x} y={y + 6} width={w} height={10} rx={2} fill="#5aa6c9" {...thin} />
+          <ellipse cx={x + w / 2} cy={y + 6} rx={w / 2 - 2} ry={4} fill="#b9bec6" {...thin} />
+        </g>
+      ))}
+      <text x={103} y={45} textAnchor="middle" fontSize={13} fill="#c2185b" stroke="#7a0f3a" strokeWidth={0.8}
+        fontFamily='"Luckiest Guy", Impact, sans-serif'>SPRINGFIELD</text>
+      <text x={103} y={62} textAnchor="middle" fontSize={15} fill="#c2185b" stroke="#7a0f3a" strokeWidth={0.8}
+        fontFamily='"Luckiest Guy", Impact, sans-serif'>MALL</text>
+      <path d="M24 116 V86 Q24 70 40 70 H58 Q74 70 74 86 V116 Z" fill="#f5a97a" {...ink} />
+      <path d="M32 72 h34" stroke="#9fdcf7" strokeWidth={4} />
+      <rect x={36} y={90} width={26} height={26} fill="#9fdcf7" stroke="#c4562a" strokeWidth={2.5} />
+      <path d="M49 90 v26" stroke="#c4562a" strokeWidth={2} />
+      <rect x={24} y={110} width={50} height={6} fill="#b8452f" {...thin} />
+      {cone(82, 30)}
+      {cone(150, 26)}
     </g>
   );
 }
@@ -319,7 +337,7 @@ const ART: Record<LocationId | "flanders", () => JSX.Element> = {
   university: University,
   krusty: Krusty,
   trynsave: TryNSave,
-  globex: Globex,
+  mall: Mall,
   aztec: Aztec,
   moes: Moes,
   bowlarama: Bowlarama,

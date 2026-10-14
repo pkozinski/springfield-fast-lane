@@ -41,8 +41,8 @@ src/
                            seeded RNG `rand(s)` (mulberry32 over state.seed); endWeek -> rivalWeek
     store.tsx              React context + reducer + localStorage autosave (key springfield.save.v1)
   components/
-    Board.tsx              board card: header, 2D/3D switch (saved in localStorage springfield.boardStyle)
-    FlatBoard.tsx          *** default board ***: flat Jones-style grid of storefront tiles + walking tokens
+    Board.tsx              board card: header, 2D/3D switch (saved in localStorage springfield.boardStyle; 3D default)
+    FlatBoard.tsx          optional 2D board: flat Jones-style grid of storefront tiles + walking tokens
     Facades.tsx            front-facing SVG storefront art per location + the town square
     CityMap.tsx            the Three.js 3D board (optional; lazy-loaded so Three.js only loads on demand)
     LocationPanel.tsx      the location card (opens over the board)
@@ -56,8 +56,8 @@ src/
 ## Game model (quick map)
 - **Goals:** Wealth (net worth), Career (job tier), Education (degrees), Happiness. Win = all four
   met. Lose = Flanders meets all four first (`lostTo: "rival"`) or weeks run out (`"time"`).
-- **Locations (ids):** home (Evergreen Terrace), employment, university, krusty, trynsave, globex,
-  aztec, moes, bowlarama, kwikemart, lardlad, plant (Nuclear Power Plant, a pure workplace), bank.
+- **Locations (ids):** home (Evergreen Terrace), employment, university, krusty, trynsave, mall (Springfield Mall; was Globex),
+  aztec, moes, bowlarama, kwikemart, lardlad, plant (Nuclear Power Plant: Safety Inspector, Nuclear Engineer, Exec Assistant to Mr. Burns), bank.
 - **Education (Jones-style):** `DEGREES` in `data.ts` form a prerequisite tree. ENROLL pays the
   fee once; ATTEND spends `classHours(s)` (6h, 5h with a laptop) per class; after
   `CONFIG.classesPerDegree` (5) classes you graduate. State: `degrees` (earned ids) + `enrolled`
@@ -73,7 +73,7 @@ src/
   (p10 20, p90 25), so he beats the 24-week limit ~82% of runs. Tune with the two CONFIG knobs.
 - **Reducer purity:** never use `Math.random` in the engine; use `rand(s)`. START takes a `seed`.
 
-## The flat board — `components/FlatBoard.tsx` (the default)
+## The flat board — `components/FlatBoard.tsx` (optional, behind the 2D switch)
 - CSS grid 5 x 4 (`.flat-grid`), tiles placed by each location's `x/y`; the Flanders house is a
   static tile; the town square spans the middle with the week clock in it. Styles: `.board-flat`,
   `.tile`, `.flat-square`, `.flat-token` in `index.css`.
@@ -84,7 +84,7 @@ src/
 - Why flat: on a square ring, every 3D camera angle left the side/corner buildings foreshortened
   (corner 3/4 and straight-on variants were both tried and rejected by the user).
 
-## The 3D board — `components/CityMap.tsx` (optional, behind the 3D switch)
+## The 3D board — `components/CityMap.tsx` (the default)
 - **Look:** `MeshToonMaterial` everywhere via `toon(color)` (3-band gradient map) + `glow(color)` for
   self-lit bits, rendered through `OutlineEffect` for ink outlines. `noOutline(mat)` opts a material
   out (signs, clouds). No env map / PBR anymore.
@@ -92,11 +92,11 @@ src/
   (player + Ned, so buildings in the row in front can never hide them; fake blob shadows live in
   the main scene), 3) `labelScene` (all name-label sprites, moved there after construction; sprites
   use `sizeAttenuation: false` so they're a constant on-screen size).
-- **Camera:** straight-on, 50° above the ground, narrow 28° lens from far back so the back row stays
-  nearly as big as the front (`CAM_AZIMUTH`/`CAM_ELEVATION`; a corner 3/4 view was tried and rejected).
-  `fitCamera()` (every resize) picks distance + aim to fill the canvas, leaving headroom for the
-  week clock; `declutterLabels()` lifts any label overlapping a nearer one. Label sprite size in
-  `makeLabel` is tuned to the lens: change the FOV and you must rescale labels.
+- **Camera:** top-down isometric: `OrthographicCamera`, straight on (`CAM_AZIMUTH` 0) and steep
+  (`CAM_ELEVATION` 62°), so every building is the same size. Tried and rejected: corner 3/4 perspective,
+  straight-on 28° perspective, and the flat 2D board (still available via the 2D switch).
+  `fitCamera(aspect)` sets the ortho frustum to frame the island (headroom for the week clock);
+  `sizeLabels()` keeps label sprites a constant on-screen size; `declutterLabels()` lifts overlaps.
 - **Buildings:** `buildBuilding(loc)` returns `{ group, body, topY, halfW }`; one `case` per
   location id. `body` = main clickable mesh (hover tints its material's emissive). Helpers come from
   `kit(g)`: `box`, `cyl`, `ball`, `mesh`, `hipRoof`, `mansard`, `win`, `winSide`, `sign` (canvas-text

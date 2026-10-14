@@ -558,42 +558,38 @@ function buildBuilding(loc: Location) {
       break;
     }
 
-    /* -------- Globex Corporation -------- */
-    case "globex": {
-      const teal = toon("#46c2b8", { emissive: "#1d7f78", emissiveIntensity: 0.2 });
-      const band = toon("#f4f4ef");
-      const podH = 0.3;
-      body = box(1.25, podH, 1.05, 0, podH / 2, 0, concrete);
-      box(0.6, 0.24, 0.04, 0, 0.13, 0.535, darkGlass, 0.02);
-      box(1.0, 0.13, 0.03, 0, 0.36, 0.42, toon("#18323a"), 0.02);
-      sign("GLOBEX", 0.6, 0.11, 0, 0.36, 0.44, { fg: "#46c2b8" });
-      // stacked glass floors
-      const floors = 4;
-      const fh = 0.26;
-      for (let i = 0; i < floors; i++) {
-        const y = podH + i * fh;
-        box(0.82, 0.05, 0.74, 0, y + 0.025, -0.08, band, 0.015);
-        box(0.76, fh - 0.05, 0.68, 0, y + 0.05 + (fh - 0.05) / 2, -0.08, teal, 0.02);
+    /* -------- Springfield Mall -------- */
+    case "mall": {
+      const pink = toon("#f27bb5");
+      const pinkDk = toon("#e45f9f");
+      const peach = toon("#f5a97a");
+      const brick = toon("#b8452f");
+      const hvac = toon("#5aa6c9");
+      // brown back building
+      box(0.55, 0.55, 0.6, -0.38, 0.275, -0.22, toon("#8a5a4a"), 0.03);
+      // pink base with glass doors, then the big flared block on top
+      body = box(0.9, 0.36, 0.86, 0.12, 0.18, 0, pinkDk, 0.03);
+      box(0.32, 0.26, 0.04, 0.2, 0.13, 0.44, glass, 0.02);
+      mansard(0.92, 0.88, 0.48, 0.12, 0.36, 0, pink, 1.28);
+      // flat grey roof inside a pink parapet rim (the part you see from above)
+      box(1.16, 0.08, 1.12, 0.12, 0.86, 0, pink, 0.03);
+      box(0.96, 0.04, 0.92, 0.12, 0.9, -0.02, roofGrey, 0.02);
+      // red lettering along the front edge, tipped back so it reads from the high camera
+      sign("SPRINGFIELD MALL", 1.0, 0.2, 0.12, 0.98, 0.42, { fg: "#d81b60", bg: "#ffd6ea" }).rotation.x = -0.95;
+      // rooftop AC units with fans
+      for (const [x, z] of [[-0.14, -0.22], [0.36, -0.22], [0.12, 0.02]]) {
+        box(0.26, 0.1, 0.2, x, 0.93, z, hvac, 0.02);
+        cyl(0.08, 0.08, 0.03, x, 0.995, z, metal, 16);
       }
-      const roofY = podH + floors * fh;
-      box(0.86, 0.08, 0.78, 0, roofY + 0.04, -0.08, band, 0.02);
-      // the globe on top
-      cyl(0.04, 0.08, 0.22, 0, roofY + 0.19, -0.08, metal, 10);
-      const gY = roofY + 0.62;
-      ball(0.32, 0, gY, -0.08, toon("#3d8fe0"), 26);
-      for (const [lx, ly, lz, r] of [[0.12, 0.12, 0.26, 0.11], [-0.18, -0.05, 0.22, 0.09], [0.05, -0.18, 0.25, 0.08]] as number[][]) {
-        const land = ball(r, lx, gY + ly, -0.08 + lz, toon("#52b947"), 12);
-        land.scale.set(1, 0.7, 0.35);
-      }
-      const gold = toon("#f2c14e");
-      const ring1 = mesh(new THREE.TorusGeometry(0.4, 0.02, 8, 40), gold, 0, gY, -0.08);
-      ring1.rotation.x = Math.PI / 2 - 0.35;
-      const ring2 = mesh(new THREE.TorusGeometry(0.4, 0.02, 8, 40), gold, 0, gY, -0.08);
-      ring2.rotation.y = 0.5;
-      ring2.userData.spin = true;
-      ring2.castShadow = false; // spins, and the shadow map is frozen
-      topY = gY + 0.38;
-      halfW = 0.62;
+      // peach entrance wing with a skylight, front-left
+      box(0.5, 0.36, 0.42, -0.36, 0.18, 0.3, peach, 0.12);
+      box(0.34, 0.03, 0.12, -0.36, 0.375, 0.3, glass, 0.01);
+      box(0.22, 0.22, 0.03, -0.36, 0.12, 0.52, glass, 0.01);
+      box(0.5, 0.05, 0.43, -0.36, 0.025, 0.3, brick, 0.01);
+      // cone shrubs
+      for (const x of [-0.05, 0.55]) mesh(new THREE.ConeGeometry(0.08, 0.3, 10), toon("#5cc85a"), x, 0.15, 0.5);
+      topY = 1.05;
+      halfW = 0.6;
       break;
     }
 
@@ -1102,11 +1098,11 @@ function initScene(
 
   const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultColor: [0.11, 0.1, 0.09], defaultAlpha: 1 });
 
-  const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 200);
-  // straight-on view with a narrow lens from farther back, so the back row stays nearly as big as the front.
-  // fitCamera() picks the distance that frames the whole island for the current aspect.
+  // Top-down isometric: an orthographic camera (no perspective, so every building is the same
+  // size wherever it sits) looking down steeply. fitCamera() sizes the view to frame the island.
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   const CAM_AZIMUTH = THREE.MathUtils.degToRad(0); // 0 = straight on from the front
-  const CAM_ELEVATION = THREE.MathUtils.degToRad(50); // angle above the ground
+  const CAM_ELEVATION = THREE.MathUtils.degToRad(62); // angle above the ground
   const camTarget = new THREE.Vector3(0, 0.6, -0.2);
   const camDir = new THREE.Vector3(
     Math.sin(CAM_AZIMUTH) * Math.cos(CAM_ELEVATION),
@@ -1119,53 +1115,39 @@ function initScene(
   const framePts: THREE.Vector3[] = [];
   for (const x of [-frameHalfW, frameHalfW])
     for (const z of [-frameHalfD, frameHalfD])
-      for (const y of [-0.3, 2.4]) framePts.push(new THREE.Vector3(x, y, z));
-  function fitCamera() {
+      for (const y of [-0.95, 2.4]) framePts.push(new THREE.Vector3(x, y, z));
+  /** Frame the island for this aspect; returns the view's half-height in world units. */
+  function fitCamera(aspect: number) {
+    const TOP = 0.86; // NDC headroom for the week clock + back-row labels
+    const BOTTOM = 0.97;
+    const SIDE = 0.98;
+    camera.position.copy(camTarget).addScaledVector(camDir, 40);
+    camera.lookAt(camTarget);
+    camera.updateMatrixWorld();
     const v = new THREE.Vector3();
-    const look = new THREE.Vector3();
-    const place = (d: number) => {
-      camera.position.copy(look).addScaledVector(camDir, d);
-      camera.lookAt(look);
-      camera.updateMatrixWorld();
-    };
-    // screen-space box of the frame points, in NDC
-    const ndcBox = () => {
-      const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
-      for (const p of framePts) {
-        v.copy(p).project(camera);
-        box.x0 = Math.min(box.x0, v.x);
-        box.x1 = Math.max(box.x1, v.x);
-        box.y0 = Math.min(box.y0, v.y);
-        box.y1 = Math.max(box.y1, v.y);
-      }
-      return box;
-    };
-    const fits = (d: number) => {
-      place(d);
-      const b = ndcBox();
-      return b.x0 >= -0.98 && b.x1 <= 0.98 && b.y0 >= -0.97 && b.y1 <= 0.86 /* headroom for the week clock + back-row labels */;
-    };
-    look.copy(camTarget);
-    let d = 20;
-    // alternate: fit the distance, then slide the aim so the board sits centred on screen
-    for (let pass = 0; pass < 4; pass++) {
-      let lo = 4;
-      let hi = 120;
-      for (let i = 0; i < 24; i++) {
-        const mid = (lo + hi) / 2;
-        if (fits(mid)) hi = mid;
-        else lo = mid;
-      }
-      d = hi;
-      place(d);
-      const b = ndcBox();
-      const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * d;
-      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
-      look.addScaledVector(right, ((b.x0 + b.x1) / 2) * halfH * camera.aspect);
-      look.addScaledVector(up, ((b.y0 + b.y1) / 2) * halfH);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of framePts) {
+      v.copy(p).applyMatrix4(camera.matrixWorldInverse);
+      x0 = Math.min(x0, v.x);
+      x1 = Math.max(x1, v.x);
+      y0 = Math.min(y0, v.y);
+      y1 = Math.max(y1, v.y);
     }
-    fits(d);
+    let halfH = (y1 - y0) / (TOP + BOTTOM);
+    const halfW = Math.max((x1 - x0) / 2 / SIDE, halfH * aspect);
+    halfH = halfW / aspect;
+    // slide the camera so the island sits centred, nudged down by the headroom
+    const cy = (y1 - TOP * halfH + y0 + BOTTOM * halfH) / 2;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    camera.position.addScaledVector(right, (x0 + x1) / 2).addScaledVector(up, cy);
+    camera.left = -halfW;
+    camera.right = halfW;
+    camera.top = halfH;
+    camera.bottom = -halfH;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    return halfH;
   }
 
   // lights: bright cartoon daylight
@@ -1327,10 +1309,17 @@ function initScene(
   });
   sprites.forEach((sp) => labelScene.attach(sp));
   const labelBaseY = sprites.map((sp) => sp.position.y);
+  const labelBaseScale = sprites.map((sp) => sp.scale.clone());
+  /** Label sizes were tuned for a 28° lens; match that on-screen size for this view's height. */
+  function sizeLabels(halfH: number) {
+    const k = halfH / Math.tan(THREE.MathUtils.degToRad(14));
+    sprites.forEach((sp, i) => sp.scale.copy(labelBaseScale[i]).multiplyScalar(k));
+  }
 
   /** Lift labels that overlap one nearer the camera, so names never hide each other. */
   function declutterLabels() {
-    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const viewW = camera.right - camera.left;
+    const viewH = camera.top - camera.bottom;
     const v = new THREE.Vector3();
     const order = sprites
       .map((sp, i) => {
@@ -1341,9 +1330,9 @@ function initScene(
       .sort((a, b) => a.depth - b.depth);
     const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     for (const { sp } of order) {
-      // sizeAttenuation:false sprites have a fixed size in NDC
-      const hw = sp.scale.x / (tanH * camera.aspect) / 2 + 0.01;
-      const hh = sp.scale.y / tanH / 2 + 0.01;
+      // label size in NDC (orthographic: world size / view size)
+      const hw = sp.scale.x / viewW + 0.01;
+      const hh = sp.scale.y / viewH + 0.01;
       for (let tries = 0; tries < 16; tries++) {
         v.copy(sp.position).project(camera);
         const r = { x0: v.x - hw, x1: v.x + hw, y0: v.y - hh, y1: v.y + hh };
@@ -1503,9 +1492,7 @@ function initScene(
     const w = mount.clientWidth || 1;
     const h = mount.clientHeight || 1;
     renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    fitCamera();
+    sizeLabels(fitCamera(w / h));
     declutterLabels();
   }
   resize();

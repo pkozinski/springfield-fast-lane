@@ -50,7 +50,7 @@ export const LOCATIONS: Location[] = [
   { id: "trynsave", name: "Try-N-Save", short: "Try-N-Save", category: "shop", x: 4, y: 0, accent: "#2f6fd6", blurb: "Discount everything: a sharp suit, home comforts, and retail shifts." },
 
   // right column (top -> bottom)
-  { id: "globex", name: "Globex Corporation", short: "Globex", category: "shop", x: 4, y: 1, accent: "#14a39a", blurb: "Gadgets, gear, and the best-paying careers in town. Don't ask about the volcano." },
+  { id: "mall", name: "Springfield Mall", short: "Mall", category: "shop", x: 4, y: 1, accent: "#e8559a", blurb: "Gadgets, gear, and a food court. The electronics shop is hiring." },
   { id: "aztec", name: "Aztec Theater", short: "Aztec", category: "leisure", x: 4, y: 2, accent: "#e08a1e", blurb: "Catch a flick. Tonight: an action-movie double feature." },
 
   // bottom row (right -> left)
@@ -58,7 +58,7 @@ export const LOCATIONS: Location[] = [
   { id: "bowlarama", name: "Bowl-A-Rama", short: "Bowling", category: "leisure", x: 3, y: 3, accent: "#d94f9a", blurb: "Bowl a few frames to lift your mood and stretch your legs." },
   { id: "kwikemart", name: "Kwik-E-Mart", short: "Kwik-E-Mart", category: "food", x: 2, y: 3, accent: "#2fa35a", blurb: "Thank you, come again! Groceries, Squishees, and day-old hot dogs." },
   { id: "lardlad", name: "Lard Lad Donuts", short: "Lard Lad", category: "food", x: 1, y: 3, accent: "#ef5fa7", blurb: "Mmm... donuts. Counter shifts available." },
-  { id: "plant", name: "Springfield Nuclear Power Plant", short: "Power Plant", category: "workplace", x: 0, y: 3, accent: "#7bbf3a", blurb: "Sector 7-G is hiring. No degree required, and it shows." },
+  { id: "plant", name: "Springfield Nuclear Power Plant", short: "Power Plant", category: "workplace", x: 0, y: 3, accent: "#7bbf3a", blurb: "Sector 7-G is hiring, no degree needed. Engineers earn the big bucks." },
 
   // left column
   { id: "bank", name: "First Bank of Springfield", short: "Bank", category: "bank", x: 0, y: 2, accent: "#2e8b57", blurb: "Save with interest, or borrow to get ahead." },
@@ -75,7 +75,7 @@ export const RING: { x: number; y: number; id?: LocationId }[] = [
   { x: 2, y: 0, id: "university" },
   { x: 3, y: 0, id: "krusty" },
   { x: 4, y: 0, id: "trynsave" },
-  { x: 4, y: 1, id: "globex" },
+  { x: 4, y: 1, id: "mall" },
   { x: 4, y: 2, id: "aztec" },
   { x: 4, y: 3, id: "moes" },
   { x: 3, y: 3, id: "bowlarama" },
@@ -131,9 +131,9 @@ export const JOBS: Job[] = [
   { id: "donut-chef", title: "Head Donut Chef", locationId: "lardlad", wage: 15, tier: 3, reqDegree: "trade", reqWardrobe: false, blurb: "Run the fryer at Lard Lad. Needs a little training." },
   { id: "teller", title: "Bank Teller", locationId: "bank", wage: 18, tier: 3, reqDegree: "college", reqWardrobe: true, blurb: "A respectable desk job. Dress the part." },
   { id: "store-mgr", title: "Store Manager", locationId: "trynsave", wage: 24, tier: 4, reqDegree: "business", reqWardrobe: true, blurb: "Run the floor at Try-N-Save." },
-  { id: "it", title: "Globex IT Specialist", locationId: "globex", wage: 28, tier: 4, reqDegree: "electronics", reqWardrobe: true, blurb: "Keep Globex's systems (and secret lairs) running." },
-  { id: "engineer", title: "Globex Engineer", locationId: "globex", wage: 40, tier: 5, reqDegree: "engineering", reqWardrobe: true, blurb: "The fast lane to wealth. Hammocks in the office." },
-  { id: "vp", title: "VP of World Domination", locationId: "globex", wage: 58, tier: 6, reqDegree: "grad", reqWardrobe: true, blurb: "Top of the ladder. Great boss, odd hobbies." },
+  { id: "it", title: "Mall Electronics Technician", locationId: "mall", wage: 28, tier: 4, reqDegree: "electronics", reqWardrobe: true, blurb: "Fix gadgets at the mall's electronics shop. Free pretzels." },
+  { id: "engineer", title: "Nuclear Engineer", locationId: "plant", wage: 40, tier: 5, reqDegree: "engineering", reqWardrobe: true, blurb: "The fast lane to wealth. Actually know what the glowing rods do." },
+  { id: "vp", title: "Executive Assistant to Mr. Burns", locationId: "plant", wage: 58, tier: 6, reqDegree: "grad", reqWardrobe: true, blurb: "Top of the ladder. Excellent... pay, terrifying boss." },
 ];
 
 export function jobsAt(locationId: string): Job[] {
@@ -146,10 +146,10 @@ export function jobsAt(locationId: string): Job[] {
 export const DEGREES: Degree[] = [
   { id: "trade", name: "Trade School Certificate", short: "Trade School", cost: 150, prereqs: [], blurb: "Hands-on basics. Lard Lad's fryers await." },
   { id: "college", name: "Community College", short: "Community College", cost: 200, prereqs: [], blurb: "General studies. Banks like a diploma on the wall." },
-  { id: "electronics", name: "Electronics", short: "Electronics", cost: 300, prereqs: ["trade"], blurb: "Circuits and soldering. Globex IT is hiring." },
+  { id: "electronics", name: "Electronics", short: "Electronics", cost: 300, prereqs: ["trade"], blurb: "Circuits and soldering. The mall's electronics shop is hiring." },
   { id: "business", name: "Business Administration", short: "Business Admin", cost: 350, prereqs: ["college"], blurb: "Spreadsheets and synergy, for management roles." },
-  { id: "engineering", name: "Nuclear Engineering", short: "Nuclear Eng.", cost: 450, prereqs: ["electronics"], blurb: "The gateway to Globex's engineering jobs." },
-  { id: "grad", name: "Graduate School", short: "Grad School", cost: 600, prereqs: ["business", "engineering"], blurb: "The top rung. World domination needs a master's." },
+  { id: "engineering", name: "Nuclear Engineering", short: "Nuclear Eng.", cost: 450, prereqs: ["electronics"], blurb: "Run the reactor at the Power Plant. Mostly safe." },
+  { id: "grad", name: "Graduate School", short: "Grad School", cost: 600, prereqs: ["business", "engineering"], blurb: "The top rung. Mr. Burns only hires the best." },
 ];
 
 // Shop catalogue -----------------------------------------------------------
@@ -157,11 +157,11 @@ export const ITEMS: ShopItem[] = [
   { id: "suit", name: "Business Suit", locationId: "trynsave", cost: 220, happy: 6, wealth: 90, category: "wardrobe", blurb: "Required for most professional careers." },
   { id: "couch", name: "New Couch", locationId: "trynsave", cost: 110, happy: 4, wealth: 40, category: "comfort", blurb: "Every family needs a good couch." },
   { id: "massage", name: "Massage Chair", locationId: "trynsave", cost: 160, happy: 6, wealth: 60, category: "comfort", blurb: "Small daily luxury." },
-  { id: "tv", name: "Big-Screen TV", locationId: "globex", cost: 650, happy: 14, wealth: 300, category: "tech", blurb: "Cartoon marathons in glorious widescreen." },
-  { id: "console", name: "Bonestorm Console", locationId: "globex", cost: 520, happy: 13, wealth: 240, category: "tech", blurb: "The game everyone's talking about." },
-  { id: "laptop", name: "Laptop", locationId: "globex", cost: 1200, happy: 10, wealth: 650, category: "tech", blurb: "Study faster: classes take 20% less time." },
-  { id: "phone", name: "Smartphone", locationId: "globex", cost: 900, happy: 12, wealth: 450, category: "tech", blurb: "Stay connected." },
-  { id: "car", name: "The Homer", locationId: "globex", cost: 5200, happy: 22, wealth: 3800, category: "vehicle", blurb: "Bubble dome, three horns, and half the travel time." },
+  { id: "tv", name: "Big-Screen TV", locationId: "mall", cost: 650, happy: 14, wealth: 300, category: "tech", blurb: "Cartoon marathons in glorious widescreen." },
+  { id: "console", name: "Bonestorm Console", locationId: "mall", cost: 520, happy: 13, wealth: 240, category: "tech", blurb: "The game everyone's talking about." },
+  { id: "laptop", name: "Laptop", locationId: "mall", cost: 1200, happy: 10, wealth: 650, category: "tech", blurb: "Study faster: classes take 20% less time." },
+  { id: "phone", name: "Smartphone", locationId: "mall", cost: 900, happy: 12, wealth: 450, category: "tech", blurb: "Stay connected." },
+  { id: "car", name: "The Homer", locationId: "mall", cost: 5200, happy: 22, wealth: 3800, category: "vehicle", blurb: "Bubble dome, three horns, and half the travel time." },
 ];
 
 export function itemsAt(locationId: string): ShopItem[] {

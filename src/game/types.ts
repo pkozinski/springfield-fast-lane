@@ -9,7 +9,7 @@ export type LocationId =
   | "university"
   | "bank"
   | "trynsave"
-  | "globex"
+  | "mall"
   | "kwikemart"
   | "bowlarama"
   | "aztec"

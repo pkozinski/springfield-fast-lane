@@ -20,6 +20,8 @@ function load(): GameState {
       if (parsed && typeof parsed.week === "number" && parsed.goals && parsed.rival) {
         // saves from before the tutorial existed skip it
         if (parsed.tutorialDone === undefined) parsed.tutorialDone = true;
+        // Globex became the Springfield Mall
+        if ((parsed.location as string) === "globex") parsed.location = "mall";
         // saves from the old credits system start the degree track fresh
         if (!Array.isArray(parsed.degrees)) {
           const old = parsed as GameState & { credits?: number; rival: { credits?: number } };

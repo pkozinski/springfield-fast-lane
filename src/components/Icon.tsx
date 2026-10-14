@@ -217,7 +217,7 @@ const LOCATION_ICON: Record<string, IconName> = {
   krusty: "food",
   lardlad: "donut",
   trynsave: "cart",
-  globex: "globe",
+  mall: "cart",
   kwikemart: "cart",
   bowlarama: "pin",
   aztec: "film",
