@@ -78,6 +78,9 @@ src/
   (player + Ned, so buildings in the row in front can never hide them; fake blob shadows live in
   the main scene), 3) `labelScene` (all name-label sprites, moved there after construction; sprites
   use `sizeAttenuation: false` so they're a constant on-screen size).
+- **Camera:** 3/4 view set by `CAM_AZIMUTH` (22°) and `CAM_ELEVATION` (38°). `fitCamera()` (run on
+  every resize) picks the distance and aim that frame the whole island for the current aspect, then
+  `declutterLabels()` lifts any name label that overlaps a nearer one.
 - **Buildings:** `buildBuilding(loc)` returns `{ group, body, topY, halfW }`; one `case` per
   location id. `body` = main clickable mesh (hover tints its material's emissive). Helpers come from
   `kit(g)`: `box`, `cyl`, `ball`, `mesh`, `hipRoof`, `mansard`, `win`, `winSide`, `sign` (canvas-text
