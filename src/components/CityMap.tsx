@@ -168,7 +168,7 @@ function makeLabel(text: string, scale = 1) {
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false })
   );
-  const s = 0.00037 * scale; // fixed on-screen size; tuned for the 28° camera lens
+  const s = 0.00055 * scale;
   sprite.scale.set(canvas.width * s, canvas.height * s, 1);
   sprite.renderOrder = 10;
   return sprite;
@@ -574,8 +574,8 @@ function buildBuilding(loc: Location) {
       // flat grey roof inside a pink parapet rim (the part you see from above)
       box(1.16, 0.08, 1.12, 0.12, 0.86, 0, pink, 0.03);
       box(0.96, 0.04, 0.92, 0.12, 0.9, -0.02, roofGrey, 0.02);
-      // red lettering along the front edge, tipped back so it reads from the high camera
-      sign("SPRINGFIELD MALL", 1.0, 0.2, 0.12, 0.98, 0.42, { fg: "#d81b60", bg: "#ffd6ea" }).rotation.x = -0.95;
+      // red lettering along the front edge, tipped back toward the camera
+      sign("SPRINGFIELD MALL", 1.0, 0.2, 0.12, 0.98, 0.42, { fg: "#d81b60", bg: "#ffd6ea" }).rotation.x = -0.6;
       // rooftop AC units with fans
       for (const [x, z] of [[-0.14, -0.22], [0.36, -0.22], [0.12, 0.02]]) {
         box(0.26, 0.1, 0.2, x, 0.93, z, hvac, 0.02);
@@ -1098,57 +1098,9 @@ function initScene(
 
   const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultColor: [0.11, 0.1, 0.09], defaultAlpha: 1 });
 
-  // Top-down isometric: an orthographic camera (no perspective, so every building is the same
-  // size wherever it sits) looking down steeply. fitCamera() sizes the view to frame the island.
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
-  const CAM_AZIMUTH = THREE.MathUtils.degToRad(0); // 0 = straight on from the front
-  const CAM_ELEVATION = THREE.MathUtils.degToRad(62); // angle above the ground
-  const camTarget = new THREE.Vector3(0, 0.6, -0.2);
-  const camDir = new THREE.Vector3(
-    Math.sin(CAM_AZIMUTH) * Math.cos(CAM_ELEVATION),
-    Math.sin(CAM_ELEVATION),
-    Math.cos(CAM_AZIMUTH) * Math.cos(CAM_ELEVATION),
-  );
-  // what must stay on screen: the island's corners, at ground level and at roof/label height
-  const frameHalfW = (COLS * SP) / 2 + 0.4;
-  const frameHalfD = (ROWS * SP) / 2 + 0.4;
-  const framePts: THREE.Vector3[] = [];
-  for (const x of [-frameHalfW, frameHalfW])
-    for (const z of [-frameHalfD, frameHalfD])
-      for (const y of [-0.95, 2.4]) framePts.push(new THREE.Vector3(x, y, z));
-  /** Frame the island for this aspect; returns the view's half-height in world units. */
-  function fitCamera(aspect: number) {
-    const TOP = 0.86; // NDC headroom for the week clock + back-row labels
-    const BOTTOM = 0.97;
-    const SIDE = 0.98;
-    camera.position.copy(camTarget).addScaledVector(camDir, 40);
-    camera.lookAt(camTarget);
-    camera.updateMatrixWorld();
-    const v = new THREE.Vector3();
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of framePts) {
-      v.copy(p).applyMatrix4(camera.matrixWorldInverse);
-      x0 = Math.min(x0, v.x);
-      x1 = Math.max(x1, v.x);
-      y0 = Math.min(y0, v.y);
-      y1 = Math.max(y1, v.y);
-    }
-    let halfH = (y1 - y0) / (TOP + BOTTOM);
-    const halfW = Math.max((x1 - x0) / 2 / SIDE, halfH * aspect);
-    halfH = halfW / aspect;
-    // slide the camera so the island sits centred, nudged down by the headroom
-    const cy = (y1 - TOP * halfH + y0 + BOTTOM * halfH) / 2;
-    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
-    camera.position.addScaledVector(right, (x0 + x1) / 2).addScaledVector(up, cy);
-    camera.left = -halfW;
-    camera.right = halfW;
-    camera.top = halfH;
-    camera.bottom = -halfH;
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld();
-    return halfH;
-  }
+  const camera = new THREE.PerspectiveCamera(41, 1, 0.1, 100);
+  camera.position.set(0, 10.2, 8.3);
+  camera.lookAt(0, 0.5, -0.35);
 
   // lights: bright cartoon daylight
   scene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
@@ -1308,43 +1260,6 @@ function initScene(
     if ((o as THREE.Sprite).isSprite) sprites.push(o as THREE.Sprite);
   });
   sprites.forEach((sp) => labelScene.attach(sp));
-  const labelBaseY = sprites.map((sp) => sp.position.y);
-  const labelBaseScale = sprites.map((sp) => sp.scale.clone());
-  /** Label sizes were tuned for a 28° lens; match that on-screen size for this view's height. */
-  function sizeLabels(halfH: number) {
-    const k = halfH / Math.tan(THREE.MathUtils.degToRad(14));
-    sprites.forEach((sp, i) => sp.scale.copy(labelBaseScale[i]).multiplyScalar(k));
-  }
-
-  /** Lift labels that overlap one nearer the camera, so names never hide each other. */
-  function declutterLabels() {
-    const viewW = camera.right - camera.left;
-    const viewH = camera.top - camera.bottom;
-    const v = new THREE.Vector3();
-    const order = sprites
-      .map((sp, i) => {
-        sp.position.y = labelBaseY[i];
-        v.copy(sp.position).applyMatrix4(camera.matrixWorldInverse);
-        return { sp, depth: -v.z };
-      })
-      .sort((a, b) => a.depth - b.depth);
-    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
-    for (const { sp } of order) {
-      // label size in NDC (orthographic: world size / view size)
-      const hw = sp.scale.x / viewW + 0.01;
-      const hh = sp.scale.y / viewH + 0.01;
-      for (let tries = 0; tries < 16; tries++) {
-        v.copy(sp.position).project(camera);
-        const r = { x0: v.x - hw, x1: v.x + hw, y0: v.y - hh, y1: v.y + hh };
-        const clear = !placed.some((p) => r.x0 < p.x1 && r.x1 > p.x0 && r.y0 < p.y1 && r.y1 > p.y0);
-        if (clear || tries === 15) {
-          placed.push(r);
-          break;
-        }
-        sp.position.y += 0.1;
-      }
-    }
-  }
 
   // tokens: you, and Ned
   const st0 = deps.getState();
@@ -1492,8 +1407,8 @@ function initScene(
     const w = mount.clientWidth || 1;
     const h = mount.clientHeight || 1;
     renderer.setSize(w, h, false);
-    sizeLabels(fitCamera(w / h));
-    declutterLabels();
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
   }
   resize();
   const ro = new ResizeObserver(resize);

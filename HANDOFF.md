@@ -92,11 +92,9 @@ src/
   (player + Ned, so buildings in the row in front can never hide them; fake blob shadows live in
   the main scene), 3) `labelScene` (all name-label sprites, moved there after construction; sprites
   use `sizeAttenuation: false` so they're a constant on-screen size).
-- **Camera:** top-down isometric: `OrthographicCamera`, straight on (`CAM_AZIMUTH` 0) and steep
-  (`CAM_ELEVATION` 62°), so every building is the same size. Tried and rejected: corner 3/4 perspective,
-  straight-on 28° perspective, and the flat 2D board (still available via the 2D switch).
-  `fitCamera(aspect)` sets the ortho frustum to frame the island (headroom for the week clock);
-  `sizeLabels()` keeps label sprites a constant on-screen size; `declutterLabels()` lifts overlaps.
+- **Camera:** the original perspective view (41° FOV at (0, 10.2, 8.3) looking at (0, 0.5, -0.35)).
+  The user tried and rejected: corner 3/4 perspective, straight-on 28° auto-framed, top-down
+  orthographic, and the flat 2D board (still behind the 2D switch). Don't change it without asking.
 - **Buildings:** `buildBuilding(loc)` returns `{ group, body, topY, halfW }`; one `case` per
   location id. `body` = main clickable mesh (hover tints its material's emissive). Helpers come from
   `kit(g)`: `box`, `cyl`, `ball`, `mesh`, `hipRoof`, `mansard`, `win`, `winSide`, `sign` (canvas-text
