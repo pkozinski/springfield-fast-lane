@@ -78,6 +78,11 @@ src/
   (player + Ned, so buildings in the row in front can never hide them; fake blob shadows live in
   the main scene), 3) `labelScene` (all name-label sprites, moved there after construction; sprites
   use `sizeAttenuation: false` so they're a constant on-screen size).
+- **Camera:** straight-on, 50° above the ground, narrow 28° lens from far back so the back row stays
+  nearly as big as the front (`CAM_AZIMUTH`/`CAM_ELEVATION`; a corner 3/4 view was tried and rejected).
+  `fitCamera()` (every resize) picks distance + aim to fill the canvas, leaving headroom for the
+  week clock; `declutterLabels()` lifts any label overlapping a nearer one. Label sprite size in
+  `makeLabel` is tuned to the lens: change the FOV and you must rescale labels.
 - **Buildings:** `buildBuilding(loc)` returns `{ group, body, topY, halfW }`; one `case` per
   location id. `body` = main clickable mesh (hover tints its material's emissive). Helpers come from
   `kit(g)`: `box`, `cyl`, `ball`, `mesh`, `hipRoof`, `mansard`, `win`, `winSide`, `sign` (canvas-text

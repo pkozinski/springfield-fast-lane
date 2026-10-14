@@ -169,7 +169,7 @@ function makeLabel(text: string, scale = 1) {
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false })
   );
-  const s = 0.00055 * scale;
+  const s = 0.00037 * scale; // fixed on-screen size; tuned for the 28° camera lens
   sprite.scale.set(canvas.width * s, canvas.height * s, 1);
   sprite.renderOrder = 10;
   return sprite;
@@ -1103,9 +1103,71 @@ function initScene(
 
   const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultColor: [0.11, 0.1, 0.09], defaultAlpha: 1 });
 
-  const camera = new THREE.PerspectiveCamera(41, 1, 0.1, 100);
-  camera.position.set(0, 10.2, 8.3);
-  camera.lookAt(0, 0.5, -0.35);
+  const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 200);
+  // straight-on view with a narrow lens from farther back, so the back row stays nearly as big as the front.
+  // fitCamera() picks the distance that frames the whole island for the current aspect.
+  const CAM_AZIMUTH = THREE.MathUtils.degToRad(0); // 0 = straight on from the front
+  const CAM_ELEVATION = THREE.MathUtils.degToRad(50); // angle above the ground
+  const camTarget = new THREE.Vector3(0, 0.6, -0.2);
+  const camDir = new THREE.Vector3(
+    Math.sin(CAM_AZIMUTH) * Math.cos(CAM_ELEVATION),
+    Math.sin(CAM_ELEVATION),
+    Math.cos(CAM_AZIMUTH) * Math.cos(CAM_ELEVATION),
+  );
+  // what must stay on screen: the island's corners, at ground level and at roof/label height
+  const frameHalfW = (COLS * SP) / 2 + 0.4;
+  const frameHalfD = (ROWS * SP) / 2 + 0.4;
+  const framePts: THREE.Vector3[] = [];
+  for (const x of [-frameHalfW, frameHalfW])
+    for (const z of [-frameHalfD, frameHalfD])
+      for (const y of [-0.3, 2.4]) framePts.push(new THREE.Vector3(x, y, z));
+  function fitCamera() {
+    const v = new THREE.Vector3();
+    const look = new THREE.Vector3();
+    const place = (d: number) => {
+      camera.position.copy(look).addScaledVector(camDir, d);
+      camera.lookAt(look);
+      camera.updateMatrixWorld();
+    };
+    // screen-space box of the frame points, in NDC
+    const ndcBox = () => {
+      const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      for (const p of framePts) {
+        v.copy(p).project(camera);
+        box.x0 = Math.min(box.x0, v.x);
+        box.x1 = Math.max(box.x1, v.x);
+        box.y0 = Math.min(box.y0, v.y);
+        box.y1 = Math.max(box.y1, v.y);
+      }
+      return box;
+    };
+    const fits = (d: number) => {
+      place(d);
+      const b = ndcBox();
+      return b.x0 >= -0.98 && b.x1 <= 0.98 && b.y0 >= -0.97 && b.y1 <= 0.86 /* headroom for the week clock + back-row labels */;
+    };
+    look.copy(camTarget);
+    let d = 20;
+    // alternate: fit the distance, then slide the aim so the board sits centred on screen
+    for (let pass = 0; pass < 4; pass++) {
+      let lo = 4;
+      let hi = 120;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) hi = mid;
+        else lo = mid;
+      }
+      d = hi;
+      place(d);
+      const b = ndcBox();
+      const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * d;
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      look.addScaledVector(right, ((b.x0 + b.x1) / 2) * halfH * camera.aspect);
+      look.addScaledVector(up, ((b.y0 + b.y1) / 2) * halfH);
+    }
+    fits(d);
+  }
 
   // lights: bright cartoon daylight
   scene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
@@ -1265,6 +1327,36 @@ function initScene(
     if ((o as THREE.Sprite).isSprite) sprites.push(o as THREE.Sprite);
   });
   sprites.forEach((sp) => labelScene.attach(sp));
+  const labelBaseY = sprites.map((sp) => sp.position.y);
+
+  /** Lift labels that overlap one nearer the camera, so names never hide each other. */
+  function declutterLabels() {
+    const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const v = new THREE.Vector3();
+    const order = sprites
+      .map((sp, i) => {
+        sp.position.y = labelBaseY[i];
+        v.copy(sp.position).applyMatrix4(camera.matrixWorldInverse);
+        return { sp, depth: -v.z };
+      })
+      .sort((a, b) => a.depth - b.depth);
+    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    for (const { sp } of order) {
+      // sizeAttenuation:false sprites have a fixed size in NDC
+      const hw = sp.scale.x / (tanH * camera.aspect) / 2 + 0.01;
+      const hh = sp.scale.y / tanH / 2 + 0.01;
+      for (let tries = 0; tries < 16; tries++) {
+        v.copy(sp.position).project(camera);
+        const r = { x0: v.x - hw, x1: v.x + hw, y0: v.y - hh, y1: v.y + hh };
+        const clear = !placed.some((p) => r.x0 < p.x1 && r.x1 > p.x0 && r.y0 < p.y1 && r.y1 > p.y0);
+        if (clear || tries === 15) {
+          placed.push(r);
+          break;
+        }
+        sp.position.y += 0.1;
+      }
+    }
+  }
 
   // tokens: you, and Ned
   const st0 = deps.getState();
@@ -1414,6 +1506,8 @@ function initScene(
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    fitCamera();
+    declutterLabels();
   }
   resize();
   const ro = new ResizeObserver(resize);
