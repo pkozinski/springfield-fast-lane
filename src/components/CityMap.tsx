@@ -982,12 +982,21 @@ const NED_LOOK: FigureLook = {
 /** A chunky cartoon townsperson game piece (~1 unit tall). */
 function makeFigure(look: FigureLook, ringColor: string) {
   const f = new THREE.Group();
-  const skin = toon(SKIN);
-  const shirt = toon(look.shirt);
-  const pants = toon(look.pants);
-  const ink = toon("#2b2723");
-  const white = toon("#ffffff");
-  const hairMat = toon(look.hairColor ?? "#5a3a1e");
+  // tokens are small on screen, so a thinner ink line keeps them crisp instead of smudgy
+  const thin = <M extends THREE.Material>(m: M): M => {
+    m.userData.outlineParameters = { thickness: 0.0028 };
+    return m;
+  };
+  // tiny face details: flat colour, no outline (outlines on parts this small just blur together)
+  const flat = (color: string) => noOutline(new THREE.MeshBasicMaterial({ color }));
+  const skin = thin(toon(SKIN));
+  const skinDetail = noOutline(toon(SKIN));
+  const shirt = thin(toon(look.shirt));
+  const pants = thin(toon(look.pants));
+  const ink = thin(toon("#2b2723"));
+  const inkFlat = flat("#2b2723");
+  const white = thin(new THREE.MeshBasicMaterial({ color: "#ffffff" }));
+  const hairMat = thin(toon(look.hairColor ?? "#5a3a1e"));
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
@@ -997,7 +1006,7 @@ function makeFigure(look: FigureLook, ringColor: string) {
   };
 
   // base ring so the piece reads on the board
-  const base = add(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 28), toon(ringColor), 0, 0.025, 0);
+  const base = add(new THREE.CylinderGeometry(0.3, 0.32, 0.05, 28), thin(toon(ringColor)), 0, 0.025, 0);
   base.receiveShadow = true;
 
   for (const sx of [-0.065, 0.065]) {
@@ -1006,30 +1015,30 @@ function makeFigure(look: FigureLook, ringColor: string) {
   }
   add(new THREE.CylinderGeometry(0.12, 0.14, 0.3, 16), shirt, 0, 0.48, 0);
   add(new THREE.SphereGeometry(0.12, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), shirt, 0, 0.62, 0).scale.y = 0.4;
-  if (look.collar) add(new THREE.ConeGeometry(0.05, 0.08, 3), toon(look.collar), 0, 0.6, 0.1).rotation.x = Math.PI;
+  if (look.collar) add(new THREE.ConeGeometry(0.05, 0.08, 3), flat(look.collar), 0, 0.6, 0.1).rotation.x = Math.PI;
   for (const sx of [-1, 1]) {
     const arm = add(new THREE.CylinderGeometry(0.035, 0.035, 0.26, 8), shirt, sx * 0.16, 0.49, 0);
     arm.rotation.z = sx * 0.22;
-    add(new THREE.SphereGeometry(0.04, 10, 8), skin, sx * 0.19, 0.35, 0);
+    add(new THREE.SphereGeometry(0.04, 12, 10), skinDetail, sx * 0.19, 0.35, 0);
   }
 
   // tall cartoon head + big eyes + nose
-  add(new THREE.CapsuleGeometry(0.115, 0.17, 6, 18), skin, 0, 0.84, 0);
+  add(new THREE.CapsuleGeometry(0.115, 0.17, 8, 24), skin, 0, 0.84, 0);
   for (const sx of [-1, 1]) {
-    add(new THREE.SphereGeometry(0.055, 14, 10), white, sx * 0.05, 0.88, 0.09);
-    add(new THREE.SphereGeometry(0.017, 8, 6), ink, sx * 0.05, 0.88, 0.143);
+    add(new THREE.SphereGeometry(0.062, 20, 14), white, sx * 0.058, 0.89, 0.085);
+    add(new THREE.SphereGeometry(0.022, 12, 8), inkFlat, sx * 0.058, 0.89, 0.143);
   }
-  add(new THREE.CapsuleGeometry(0.024, 0.05, 4, 8), skin, 0, 0.82, 0.13).rotation.x = Math.PI / 2;
+  add(new THREE.CapsuleGeometry(0.026, 0.05, 6, 12), skinDetail, 0, 0.81, 0.13).rotation.x = Math.PI / 2;
   if (look.glasses) {
-    for (const sx of [-1, 1]) add(new THREE.TorusGeometry(0.062, 0.011, 6, 16), ink, sx * 0.05, 0.88, 0.1);
+    for (const sx of [-1, 1]) add(new THREE.TorusGeometry(0.068, 0.012, 8, 24), inkFlat, sx * 0.058, 0.89, 0.1);
   }
-  if (look.mustache) add(rb(0.12, 0.03, 0.03, 0.012), hairMat, 0, 0.77, 0.12);
+  if (look.mustache) add(rb(0.12, 0.03, 0.03, 0.012), noOutline(toon(look.hairColor ?? "#5a3a1e")), 0, 0.765, 0.125);
 
   // hair
   switch (look.hair) {
     case "bald":
       for (const sx of [-0.025, 0.025]) {
-        const h = add(new THREE.TorusGeometry(0.035, 0.006, 4, 12, Math.PI), ink, sx, 1.02, 0);
+        const h = add(new THREE.TorusGeometry(0.035, 0.007, 6, 16, Math.PI), inkFlat, sx, 1.02, 0);
         h.rotation.y = Math.PI / 2;
       }
       break;
@@ -1262,7 +1271,8 @@ function initScene(
   const look = TOKEN_LOOK[st0.avatar] ?? TOKEN_LOOK.p0;
   const token = makeFigure({ ...look, shirt: avatarShirt(st0.avatar) }, "#fed90f");
   const ned = makeFigure(NED_LOOK, "#7fcf6d");
-  ned.scale.setScalar(0.92);
+  token.scale.setScalar(1.2);
+  ned.scale.setScalar(1.1);
   const tokenScene = new THREE.Scene();
   tokenScene.add(token, ned);
   tokenScene.add(new THREE.HemisphereLight(0xffffff, 0x9ccf7a, 1.1));
@@ -1272,7 +1282,7 @@ function initScene(
   tokenScene.add(tokenSun);
   // soft contact shadows on the board (the tokens can't cast real ones from their own scene)
   const blobMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x1d1a17, transparent: true, opacity: 0.28, depthWrite: false }));
-  const blobGeo = new THREE.CircleGeometry(0.34, 24);
+  const blobGeo = new THREE.CircleGeometry(0.4, 24);
   blobGeo.rotateX(-Math.PI / 2);
   const tokenBlob = new THREE.Mesh(blobGeo, blobMat);
   const nedBlob = new THREE.Mesh(blobGeo, blobMat);
